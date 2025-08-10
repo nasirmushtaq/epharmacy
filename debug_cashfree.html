@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cashfree Debug Test</title>
+    <style>
+        body { font-family: -apple-system, Roboto, Arial; margin: 20px; }
+        .log { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        button { background: #4f46e5; color: white; border: none; border-radius: 8px; padding: 12px 16px; font-size: 16px; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Cashfree SDK Debug Test</h1>
+    <button onclick="testSDK()">Test SDK Loading</button>
+    <button onclick="testCheckout()">Test Checkout</button>
+    
+    <div id="logs"></div>
+
+    <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+    <script>
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = 'log ' + type;
+            div.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            document.getElementById('logs').appendChild(div);
+            console.log(message);
+        }
+
+        function testSDK() {
+            log('Testing Cashfree SDK...');
+            
+            if (typeof Cashfree === 'undefined') {
+                log('ERROR: Cashfree SDK not loaded', 'error');
+                return;
+            }
+            
+            log('✅ Cashfree SDK is available', 'success');
+            log('Cashfree type: ' + typeof Cashfree);
+            
+            try {
+                const cashfree = Cashfree({ mode: 'sandbox' });
+                log('✅ Cashfree initialized successfully', 'success');
+                log('Cashfree object: ' + JSON.stringify(Object.keys(cashfree || {})));
+                
+                if (typeof cashfree?.checkout === 'function') {
+                    log('✅ checkout method is available', 'success');
+                } else {
+                    log('❌ checkout method is NOT available. Available methods: ' + Object.keys(cashfree || {}), 'error');
+                }
+            } catch (e) {
+                log('❌ Error initializing Cashfree: ' + e.message, 'error');
+            }
+        }
+
+        function testCheckout() {
+            log('Testing checkout...');
+            
+            try {
+                const cashfree = Cashfree({ mode: 'sandbox' });
+                
+                // Use a dummy session ID for testing
+                const sessionId = 'test_session_12345';
+                
+                cashfree.checkout({
+                    paymentSessionId: sessionId
+                }, {
+                    onSuccess: function(data) {
+                        log('✅ Payment Success: ' + JSON.stringify(data), 'success');
+                    },
+                    onFailure: function(data) {
+                        log('❌ Payment Failed: ' + JSON.stringify(data), 'error');
+                    },
+                    onClose: function() {
+                        log('Payment window closed');
+                    }
+                });
+                
+                log('✅ Checkout method called successfully', 'success');
+            } catch (e) {
+                log('❌ Error calling checkout: ' + e.message, 'error');
+            }
+        }
+
+        // Auto-test on page load
+        window.onload = function() {
+            log('Page loaded. Testing SDK availability...');
+            setTimeout(testSDK, 1000);
+        };
+        
+        // Global error handler
+        window.onerror = function(msg, src, line, col, err) {
+            log('❌ JavaScript Error: ' + msg + ' (Line: ' + line + ')', 'error');
+        };
+    </script>
+</body>
+</html> 
