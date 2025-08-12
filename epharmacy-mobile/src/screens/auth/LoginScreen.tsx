@@ -33,21 +33,8 @@ const LoginScreen = ({ navigation }: any) => {
     navigation.navigate('Register');
   };
 
-  const fillDemoAccount = (role: string) => {
-    switch (role) {
-      case 'customer':
-        setEmail('admin@gmail1.com');
-        setPassword('password123');
-        break;
-      case 'pharmacist':
-        setEmail('admin@gmail.com');
-        setPassword('password123');
-        break;
-      default:
-        setEmail('admin@gmail1.com');
-        setPassword('password123');
-    }
-  };
+  // Removed demo account autofill
+  const fillDemoAccount = (_role: string) => {};
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -101,27 +88,7 @@ const LoginScreen = ({ navigation }: any) => {
                 )}
               </Button>
 
-              <Divider style={styles.divider} />
-
-              <Text style={styles.demoTitle}>Demo Accounts:</Text>
-              
-              <Button
-                mode="outlined"
-                onPress={() => fillDemoAccount('customer')}
-                style={styles.demoButton}
-                compact
-              >
-                Customer Demo
-              </Button>
-
-              <Button
-                mode="outlined"
-                onPress={() => fillDemoAccount('pharmacist')}
-                style={styles.demoButton}
-                compact
-              >
-                Pharmacist Demo
-              </Button>
+              {/* Demo account buttons removed */}
 
               <View style={styles.registerContainer}>
                 <Text style={styles.registerText}>Don't have an account? </Text>
