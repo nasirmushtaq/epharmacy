@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useReducer } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
 export interface CartLineItem {
   medicineId: string;
@@ -58,18 +59,37 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const { state: authState } = useAuth();
+  const storageKeyRef = useRef<string>('cart:guest');
+
+  const computeStorageKey = () => {
+    const userId = authState.user?._id || authState.user?.id;
+    return userId ? `cart:${userId}` : 'cart:guest';
+  };
 
   useEffect(() => {
+    // On mount and whenever user changes, switch storage key and load user-scoped cart
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem('cart');
+        const newKey = computeStorageKey();
+        // Migrate legacy key 'cart' to user-scoped on first run for this user
+        const legacy = await AsyncStorage.getItem('cart');
+        const existingUserCart = await AsyncStorage.getItem(newKey);
+        if (legacy && !existingUserCart) {
+          await AsyncStorage.setItem(newKey, legacy);
+          await AsyncStorage.removeItem('cart');
+        }
+        storageKeyRef.current = newKey;
+        // Clear in-memory to avoid showing previous user's items briefly
+        dispatch({ type: 'CLEAR' });
+        const raw = await AsyncStorage.getItem(newKey);
         if (raw) dispatch({ type: 'LOAD', payload: JSON.parse(raw) });
       } catch {}
     })();
-  }, []);
+  }, [authState.user?._id]);
 
   useEffect(() => {
-    AsyncStorage.setItem('cart', JSON.stringify(state.items)).catch(() => {});
+    AsyncStorage.setItem(storageKeyRef.current, JSON.stringify(state.items)).catch(() => {});
   }, [state.items]);
 
   const subtotal = useMemo(() => state.items.reduce((sum, i) => sum + i.price * i.quantity, 0), [state.items]);

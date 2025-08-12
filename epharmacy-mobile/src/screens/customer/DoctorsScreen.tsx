@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, FlatList, StyleSheet, Alert } from 'react-native';
 import { Text, Button, Card, Surface, TextInput, Dialog, Portal, Snackbar } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import DatePickerField from '../../components/DatePickerField';
 import PaymentModal from '../../components/PaymentModal';
 import api from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Doctor { _id: string; user: any; specialties: string[]; clinics: any[]; fee: number; }
 
@@ -17,7 +18,7 @@ const DoctorsScreen = () => {
   const [snack, setSnack] = useState('');
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<{ from: string; to: string } | null>(null);
-  const [date, setDate] = useState<string>(''); // ISO
+  const [date, setDate] = useState<string>(new Date().toISOString().slice(0,10)); // ISO, default today
   const [paymentVisible, setPaymentVisible] = useState(false);
   const [paymentContext, setPaymentContext] = useState<{ 
     bookingId: string; 
@@ -28,13 +29,53 @@ const DoctorsScreen = () => {
     orderId: string; 
   } | null>(null);
 
-  const { data: doctors = [], isFetching } = useQuery({
-    queryKey: ['doctors', specialty],
+  const { state: authState } = useAuth();
+
+  const { data: doctors = [], isFetching, refetch: refetchDoctors } = useQuery<Doctor[]>({
+    queryKey: ['doctors', specialty, !!authState.token],
+    enabled: !!authState.token,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     queryFn: async () => {
       const res = await api.get('/api/doctors', { params: specialty ? { specialty } : {} });
       return res.data.data as Doctor[];
     }
   });
+
+  // Build availability map for the selected date to filter doctors shown
+  const { data: availabilityMap = {}, isFetching: isFetchingAvail, refetch: refetchAvail } = useQuery<Record<string, boolean>>({
+    queryKey: ['doctor-availability', (doctors as any[]).map(d=>d._id).join(','), date, !!authState.token],
+    enabled: !!authState.token && !!date && (doctors as any[]).length > 0,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    queryFn: async () => {
+      const entries = await Promise.all((doctors as any[]).map(async (d:any) => {
+        try {
+          const res = await api.get(`/api/doctors/${d._id}/slots`, { params: { date, _t: Date.now() } });
+          const has = Array.isArray(res.data?.data) && res.data.data.length > 0;
+          return [d._id, has] as const;
+        } catch {
+          return [d._id, false] as const;
+        }
+      }));
+      return Object.fromEntries(entries) as Record<string, boolean>;
+    }
+  });
+
+  const visibleDoctors = useMemo<Doctor[]>(() => {
+    if (!(doctors as any[]).length) return [] as Doctor[];
+    if (!date) return doctors as Doctor[];
+    const map = (availabilityMap as Record<string, boolean>) || {};
+    const keys = Object.keys(map);
+    if (keys.length === 0) return doctors as Doctor[]; // before availability loads
+    const anyAvailable = Object.values(map).some(Boolean);
+    if (!anyAvailable) return doctors as Doctor[]; // fallback: show all, mark no slots later
+    return (doctors as any[]).filter((d:any) => map[d._id]);
+  }, [doctors, availabilityMap, date]);
 
   const { data: slots = [] } = useQuery({
     queryKey: ['doctor-slots', selectedDoctor?._id, date],
@@ -128,9 +169,14 @@ const DoctorsScreen = () => {
       qc.invalidateQueries({ queryKey: ['doctor-slots'] });
       qc.invalidateQueries({ queryKey: ['my-doctor-bookings'] });
       
-      // Navigate to bookings page
+      // Navigate to Bookings tab
       setTimeout(() => {
-        navigation.navigate('Bookings' as never);
+        const globalNav = (global as any)?.navigation;
+        if (globalNav && globalNav.navigate) {
+          globalNav.navigate('CustomerTabs', { screen: 'Bookings' });
+        } else {
+          navigation.navigate('Bookings' as never);
+        }
       }, 1500);
       
     } catch (error: any) {
@@ -152,7 +198,6 @@ const DoctorsScreen = () => {
         <Text style={styles.name}>{item.user?.firstName} {item.user?.lastName}</Text>
         <Text style={styles.meta}>{item.specialties?.join(', ') || 'General'} • Fee ₹{item.fee || 500}</Text>
         <View style={styles.row}>
-          <DatePickerField label="Date" value={date} onChange={setDate} style={styles.dateInput} />
           <Button mode="contained" onPress={() => setSelectedDoctor(selectedDoctor?._id === item._id ? null : item)} disabled={!date}>
             {selectedDoctor?._id === item._id ? 'Hide Slots' : 'View Slots'}
           </Button>
@@ -175,8 +220,11 @@ const DoctorsScreen = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput mode="outlined" placeholder="Search by specialty" value={specialty} onChangeText={setSpecialty} style={styles.search} right={<TextInput.Icon icon="magnify" />} />
-      <FlatList data={doctors} keyExtractor={(i) => i._id} renderItem={renderDoctor} contentContainerStyle={styles.list} />
+      <View style={{ paddingHorizontal: 12, paddingTop: 12 }}>
+        <DatePickerField label="Select Date" value={date} onChange={setDate} />
+        <TextInput mode="outlined" placeholder="Specialty (leave blank for All)" value={specialty} onChangeText={setSpecialty} style={styles.search} right={<TextInput.Icon icon="magnify" />} />
+      </View>
+      <FlatList data={visibleDoctors as any[]} keyExtractor={(i:any) => i._id} renderItem={renderDoctor} contentContainerStyle={styles.list} />
       
       <Portal>
         <Dialog visible={confirmVisible} onDismiss={() => setConfirmVisible(false)}>
@@ -223,7 +271,7 @@ const DoctorsScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  search: { margin: 12, marginBottom: 0 },
+  search: { marginTop: 12 },
   list: { padding: 12 },
   card: { marginBottom: 12, borderRadius: 12 },
   name: { fontSize: 16, fontWeight: '700' },

@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
+const config = require('../config/config');
 
 const router = express.Router();
 
@@ -183,6 +184,17 @@ router.put('/:id', authenticate, [
         updates[key] = req.body[key];
       }
     });
+
+    // Enforce allowed pincodes for customer address updates
+    try {
+      const isCustomer = user.role === 'customer';
+      const pin = req.body?.address?.zipCode ? String(req.body.address.zipCode).trim() : null;
+      if (isCustomer && pin && Array.isArray(config.allowedPincodes) && config.allowedPincodes.length > 0) {
+        if (!config.allowedPincodes.includes(pin)) {
+          return res.status(400).json({ success: false, message: 'Service not available at this pincode' });
+        }
+      }
+    } catch {}
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,

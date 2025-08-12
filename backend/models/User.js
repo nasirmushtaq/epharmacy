@@ -65,6 +65,15 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isPhoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  otp: {
+    code: String,
+    channel: { type: String, enum: ['email', 'phone'] },
+    expireAt: Date
+  },
   profileImage: {
     type: String,
     default: null

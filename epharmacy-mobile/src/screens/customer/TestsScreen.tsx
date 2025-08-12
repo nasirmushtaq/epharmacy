@@ -129,9 +129,14 @@ const TestsScreen = () => {
       // Refresh bookings
       qc.invalidateQueries({ queryKey: ['test-bookings'] });
       
-      // Switch to bookings tab to show the new booking
+      // Navigate to Orders/Bookings as appropriate
       setTimeout(() => {
-        setTab('bookings');
+        const globalNav = (global as any)?.navigation;
+        if (globalNav && globalNav.navigate) {
+          globalNav.navigate('CustomerTabs', { screen: 'Bookings' });
+        } else {
+          setTab('bookings');
+        }
       }, 1500);
       
     } catch (error: any) {

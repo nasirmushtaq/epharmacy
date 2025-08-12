@@ -353,4 +353,6 @@ router.post('/bookings/:id/prescriptions', authenticate, authorize('doctor','adm
     await booking.save();
     res.json({ success: true, data: booking });
   } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
-}); 
+});
+
+module.exports = router; 

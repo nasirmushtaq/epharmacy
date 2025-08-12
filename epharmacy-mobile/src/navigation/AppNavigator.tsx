@@ -3,18 +3,25 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 
 // Import screens
 import LoadingScreen from '../screens/common/LoadingScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import OtpVerifyScreen from '../screens/auth/OtpVerifyScreen';
 
 // Customer screens
 import HomeScreen from '../screens/customer/HomeScreen';
 import MedicinesScreen from '../screens/customer/MedicinesScreen';
 import CartScreen from '../screens/customer/CartScreen';
+// @ts-ignore
+import MedicineDetailScreen from '../screens/customer/MedicineDetailScreen';
+// @ts-ignore
+import DoctorDetailScreen from '../screens/customer/DoctorDetailScreen';
 import OrdersScreen from '../screens/customer/OrdersScreen';
 import PrescriptionsScreen from '../screens/customer/PrescriptionsScreen';
 import TestsScreen from '../screens/customer/TestsScreen';
@@ -27,8 +34,7 @@ import InventoryScreen from '../screens/pharmacist/InventoryScreen';
 import PrescriptionReviewScreen from '../screens/pharmacist/PrescriptionReviewScreen';
 import OrderManagementScreen from '../screens/pharmacist/OrderManagementScreen';
 import TestsAdminScreen from '../screens/admin/TestsAdminScreen';
-import { View } from 'react-native';
-import { Text, Button } from 'react-native-paper';
+import { Button } from 'react-native-paper';
 import DoctorOnboardingScreen from '../screens/doctor/DoctorOnboardingScreen';
 import DoctorBookingsScreen from '../screens/doctor/DoctorBookingsScreen';
 import UsersAdminScreen from '../screens/admin/UsersAdminScreen';
@@ -36,16 +42,99 @@ import UsersAdminScreen from '../screens/admin/UsersAdminScreen';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// Cart Button Component with Badge
+const CartButton = ({ navigation }: { navigation: any }) => {
+  const { items } = useCart();
+  const itemCount = items.reduce((total, item) => total + item.quantity, 0);
+
+  const handlePress = () => {
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Cart');
+    }
+  };
+
+  return (
+    <TouchableOpacity onPress={handlePress} style={cartButtonStyles.container}>
+      <MaterialIcons name="shopping-cart" size={24} color="#fff" />
+      {itemCount > 0 && (
+        <View style={cartButtonStyles.badge}>
+          <Text style={cartButtonStyles.badgeText}>
+            {itemCount > 99 ? '99+' : itemCount}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+const cartButtonStyles = StyleSheet.create({
+  container: {
+    marginRight: 12,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#FF4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#2196F3',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+});
+
 // Auth Stack
 const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Login" component={LoginScreen} />
     <Stack.Screen name="Register" component={RegisterScreen} />
+    <Stack.Screen name="OtpVerify" component={OtpVerifyScreen} />
+  </Stack.Navigator>
+);
+
+// Customer Stack Navigator (includes tabs + cart)
+const CustomerStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="CustomerTabs" component={CustomerTabsComponent} />
+    <Stack.Screen
+      name="Cart"
+      component={CartScreen}
+      options={{
+        headerShown: true,
+        title: 'Cart',
+        headerBackTitle: '',
+        headerRight: () => null,
+        headerTitleStyle: { fontWeight: '700' },
+        headerLeftContainerStyle: { paddingLeft: 8 },
+        headerRightContainerStyle: { paddingRight: 8 },
+      }}
+    />
+    <Stack.Screen
+      name="MedicineDetail"
+      component={MedicineDetailScreen}
+      options={{ headerShown: true, title: 'Medicine', headerBackTitle: '' }}
+    />
+    <Stack.Screen
+      name="DoctorDetail"
+      component={DoctorDetailScreen}
+      options={{ headerShown: true, title: 'Doctor', headerBackTitle: '' }}
+    />
   </Stack.Navigator>
 );
 
 // Customer Tab Navigator
-const CustomerTabs = () => (
+const CustomerTabsComponent = () => (
   <Tab.Navigator
     screenOptions={({ route, navigation }) => ({
       tabBarIcon: ({ focused, color, size }) => {
@@ -72,7 +161,7 @@ const CustomerTabs = () => (
             break;
         }
 
-        return <MaterialIcons name={iconName} size={size} color={color} />;
+        return <MaterialIcons name={iconName} size={22} color={color} />;
       },
       tabBarActiveTintColor: '#2196F3',
       tabBarInactiveTintColor: 'gray',
@@ -83,13 +172,19 @@ const CustomerTabs = () => (
       headerTitleStyle: {
         fontWeight: 'bold',
       },
-      headerRight: () => (
-        <MaterialIcons name="shopping-cart" size={24} color="#fff" style={{ marginRight: 12 }} onPress={() => navigation.navigate('Cart' as never)} />
-      ),
+      headerRight: () => <CartButton navigation={navigation} />,
       tabBarStyle: {
         paddingBottom: 5,
         paddingTop: 5,
         height: 60,
+        borderTopWidth: 1,
+        borderTopColor: '#E0E0E0',
+        backgroundColor: '#FFFFFF',
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
       },
       tabBarItemStyle: { 
         flex: 1,
@@ -97,19 +192,59 @@ const CustomerTabs = () => (
         alignItems: 'center',
       },
       tabBarLabelStyle: {
-        fontSize: 11,
-        marginTop: -5,
+        fontSize: 10,
+        marginTop: -2,
+        fontWeight: '500',
+        textAlign: 'center',
       }
     })}
   >
-    <Tab.Screen name="Medicines" component={MedicinesScreen} />
-    <Tab.Screen name="Bookings" component={CustomerBookingsScreen} />
-    <Tab.Screen name="Doctors" component={DoctorsScreen} />
-    <Tab.Screen name="Tests" component={TestsScreen} />
-    <Tab.Screen name="Orders" component={OrdersScreen} />
-    <Tab.Screen name="Profile" component={ProfileScreen} />
-    {/* Hidden Cart route for header button navigation */}
-    <Tab.Screen name="Cart" component={CartScreen} options={{ tabBarButton: () => null, title: 'Cart' }} />
+    <Tab.Screen 
+      name="Medicines" 
+      component={MedicinesScreen}
+      options={{
+        tabBarLabel: 'Meds',
+        headerTitle: 'Medicines'
+      }}
+    />
+    <Tab.Screen 
+      name="Doctors" 
+      component={DoctorsScreen}
+      options={{
+        tabBarLabel: 'Doctors'
+      }}
+    />
+    <Tab.Screen 
+      name="Tests" 
+      component={TestsScreen}
+      options={{
+        tabBarLabel: 'Tests'
+      }}
+    />
+    <Tab.Screen 
+      name="Bookings" 
+      component={CustomerBookingsScreen}
+      options={{
+        tabBarLabel: 'Bookings'
+      }}
+    />
+    <Tab.Screen 
+      name="Orders" 
+      component={OrdersScreen}
+      options={{
+        tabBarLabel: 'Orders'
+      }}
+    />
+
+    <Tab.Screen 
+      name="Profile" 
+      component={ProfileScreen}
+      options={{
+        tabBarLabel: 'Profile',
+        headerTitle: 'My Profile'
+      }}
+    />
+
   </Tab.Navigator>
 );
 
@@ -285,7 +420,7 @@ const AppNavigator = () => {
       case 'admin':
         return <AdminTabs />;
       default:
-        return <CustomerTabs />;
+        return <CustomerStack />;
     }
   };
 

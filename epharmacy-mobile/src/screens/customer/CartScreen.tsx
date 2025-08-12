@@ -29,7 +29,10 @@ import * as FileSystem from 'expo-file-system';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 import { useCart } from '../../contexts/CartContext';
+import { useAddress, Address } from '../../contexts/AddressContext';
 import PaymentModal from '../../components/PaymentModal';
+import { AddressSelection } from '../../components/AddressSelection';
+import { AddressFormModal } from '../../components/AddressFormModal';
 import { useNavigation } from '@react-navigation/native';
 
 interface CartItem {
@@ -44,19 +47,16 @@ interface CartItem {
 
 const CartScreen = () => {
   const { items, updateQuantity, removeItem, clear, subtotal } = useCart();
-  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const { state: addressState, selectAddress } = useAddress();
   const [couponCode, setCouponCode] = useState('');
   const [lastUploadedPrescriptionId, setLastUploadedPrescriptionId] = useState<string | null>(null);
-  const [addressError, setAddressError] = useState<string | null>(null);
   const [rxRequiredError, setRxRequiredError] = useState<string | null>(null);
   const [rxAutoPrompted, setRxAutoPrompted] = useState<boolean>(false);
-  const [searchText, setSearchText] = useState('');
-  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ id: string; description: string }>>([]);
-  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [paymentVisible, setPaymentVisible] = useState(false);
   const [paymentContext, setPaymentContext] = useState<{ rpOrderId: string; keyId: string; amount: number; orderId: string; cfSessionId?: string; cfEnv?: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [addressModalVisible, setAddressModalVisible] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
 
   // Distance-based delivery fee
   const PHARMACY_LAT = Number(process.env.EXPO_PUBLIC_PHARMACY_LAT || 28.6139);
@@ -72,14 +72,19 @@ const CartScreen = () => {
     return R * c;
   };
 
-  useEffect(() => {
-    if (selectedLocation) {
-      const d = haversineKm(PHARMACY_LAT, PHARMACY_LNG, selectedLocation.lat, selectedLocation.lng);
-      setDistanceKm(d);
-    } else {
-      setDistanceKm(null);
+  // Calculate distance based on selected address
+  const selectedAddress = addressState.selectedAddress;
+  const distanceKm = useMemo(() => {
+    if (selectedAddress?.location?.latitude && selectedAddress?.location?.longitude) {
+      return haversineKm(
+        PHARMACY_LAT, 
+        PHARMACY_LNG, 
+        selectedAddress.location.latitude, 
+        selectedAddress.location.longitude
+      );
     }
-  }, [selectedLocation]);
+    return null;
+  }, [selectedAddress?.location, PHARMACY_LAT, PHARMACY_LNG]);
 
   const dynamicDeliveryCharge = useMemo(() => {
     if (distanceKm == null) return 50; // fallback default when no location
@@ -109,9 +114,18 @@ const CartScreen = () => {
     },
     onSuccess: (data) => {
       try {
+        console.log('✅ Prescription upload success, response data:', JSON.stringify(data, null, 2));
         const createdId = data?.data?._id || data?._id;
-        if (createdId) setLastUploadedPrescriptionId(createdId);
-      } catch {}
+        console.log('🆔 Extracted prescription ID:', createdId);
+        if (createdId) {
+          setLastUploadedPrescriptionId(createdId);
+          console.log('✅ Set lastUploadedPrescriptionId to:', createdId);
+        } else {
+          console.error('❌ No prescription ID found in response');
+        }
+      } catch (error) {
+        console.error('❌ Error processing prescription upload response:', error);
+      }
       setRxRequiredError(null);
       queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
     },
@@ -202,45 +216,9 @@ const CartScreen = () => {
     return formData;
   };
 
-  // Google Places Autocomplete (no extra packages). Requires EXPO_PUBLIC_GOOGLE_PLACES_KEY
-  const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY;
-  useEffect(() => {
-    let active = true;
-    const run = async () => {
-      if (!GOOGLE_KEY) return;
-      const q = searchText.trim();
-      if (!q || q.length < 3) { if (active) setPlaceSuggestions([]); return; }
-      try {
-        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&key=${GOOGLE_KEY}`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (active && json?.predictions) {
-          setPlaceSuggestions(json.predictions.map((p: any) => ({ id: p.place_id, description: p.description })));
-        }
-      } catch (e) {
-        console.warn('Places autocomplete failed', e);
-      }
-    };
-    run();
-    return () => { active = false; };
-  }, [searchText, GOOGLE_KEY]);
 
-  const selectPlace = async (placeId: string, description: string) => {
-    try {
-      if (!GOOGLE_KEY) return;
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,geometry/location&key=${GOOGLE_KEY}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const loc = json?.result?.geometry?.location;
-      if (loc?.lat && loc?.lng) {
-        setSelectedLocation({ lat: loc.lat, lng: loc.lng });
-        setDeliveryAddress(json?.result?.formatted_address || description);
-        setSearchText(description);
-        setPlaceSuggestions([]);
-        setAddressError(null);
-      }
-    } catch (e) { console.warn('Place details failed', e); }
-  };
+
+
 
   const pickImagesFromLibrary = async () => {
     try {
@@ -254,6 +232,23 @@ const CartScreen = () => {
           uri: a.uri, 
           fileName: a.name, 
           mimeType: a.mimeType 
+        }));
+        const formData = await buildFormData(assets);
+        uploadMutation.mutate(formData);
+        return;
+      }
+
+      // On iOS, prefer DocumentPicker to avoid potential crashes with ImagePicker
+      if (Platform.OS === 'ios') {
+        const result = await DocumentPicker.getDocumentAsync({
+          multiple: true,
+          type: ['image/*', 'application/pdf']
+        });
+        if (result.canceled) return;
+        const assets = (result.assets || []).map((a: any) => ({
+          uri: a.uri,
+          fileName: a.name,
+          mimeType: a.mimeType || (a.uri?.toLowerCase().includes('.pdf') ? 'application/pdf' : 'image/jpeg')
         }));
         const formData = await buildFormData(assets);
         uploadMutation.mutate(formData);
@@ -284,23 +279,14 @@ const CartScreen = () => {
 
       const assets = await Promise.all(
         result.assets.map(async (asset, index) => {
-          let mimeType = 'image/jpeg';
-          if (asset.mimeType) {
-            mimeType = asset.mimeType;
-          } else if (asset.uri.toLowerCase().includes('.png')) {
-            mimeType = 'image/png';
-          } else if (asset.uri.toLowerCase().includes('.heic')) {
-            mimeType = 'image/heic';
+          let mimeType = asset.mimeType || 'image/jpeg';
+          if (!asset.mimeType) {
+            if (asset.uri.toLowerCase().includes('.png')) mimeType = 'image/png';
+            else if (asset.uri.toLowerCase().includes('.heic')) mimeType = 'image/heic';
           }
-
           const extension = mimeType.split('/')[1] || 'jpg';
           const fileName = asset.fileName || `cart_prescription_${Date.now()}_${index}.${extension}`;
-
-          return {
-            uri: asset.uri,
-            fileName,
-            mimeType
-          };
+          return { uri: asset.uri, fileName, mimeType };
         })
       );
 
@@ -310,9 +296,19 @@ const CartScreen = () => {
       console.error('❌ Upload via library failed:', e);
       Alert.alert(
         'Upload Failed', 
-        `Error: ${e.message || 'Could not access photo library'}\n\nTry using the camera instead.`,
+        `Error: ${e.message || 'Could not access photo library'}\n\nTry using the camera instead or pick a file.`,
         [
-          { text: 'Try Camera', onPress: () => takePhotoWithCamera() },
+          { text: 'Use Camera', onPress: () => takePhotoWithCamera() },
+          { text: 'Pick a File', onPress: async () => {
+            try {
+              const res = await DocumentPicker.getDocumentAsync({ multiple: true, type: ['image/*', 'application/pdf'] });
+              if (!res.canceled) {
+                const assets = (res.assets || []).map((a: any) => ({ uri: a.uri, fileName: a.name, mimeType: a.mimeType }));
+                const fd = await buildFormData(assets);
+                uploadMutation.mutate(fd);
+              }
+            } catch {}
+          }},
           { text: 'OK', style: 'cancel' }
         ]
       );
@@ -371,38 +367,55 @@ const CartScreen = () => {
   };
 
   const validateCheckout = () => {
+    console.log('🔍 Validating checkout...');
+    
     if (items.length === 0) {
+      console.log('❌ Validation failed: No items in cart');
       Alert.alert('Checkout Blocked', 'No items in your cart. Please add some medicines.');
       return false;
     }
 
     const rxItems = items.filter(item => item.isPrescriptionRequired);
+    console.log('💊 Prescription items found:', rxItems.length);
+    console.log('📋 Current prescription ID:', lastUploadedPrescriptionId);
+    
     if (rxItems.length > 0 && !lastUploadedPrescriptionId) {
+      console.log('❌ Validation failed: Prescription required but not uploaded');
       Alert.alert('Checkout Blocked', 'Prescription required for prescription medicines. Please upload a valid prescription.');
       return false;
     }
 
-    if (!deliveryAddress.trim()) {
-      Alert.alert('Checkout Blocked', 'Delivery address is required. Please enter a location or address.');
+    if (!selectedAddress) {
+      console.log('❌ Validation failed: No delivery address selected');
+      Alert.alert('Checkout Blocked', 'Delivery address is required. Please select or add a delivery address.');
       return false;
     }
-    setAddressError('');
 
+    console.log('✅ All validation checks passed');
     return true;
   };
 
   const handleCheckout = async () => {
-    if (!validateCheckout()) return;
+    console.log('🛒 Checkout button clicked!');
+    console.log('📋 Current prescription ID:', lastUploadedPrescriptionId);
+    console.log('💊 Has prescription items:', hasPrescriptionItems);
+    console.log('📦 Cart items:', items.length);
+    
+    if (!validateCheckout()) {
+      console.log('❌ Checkout validation failed');
+      return;
+    }
 
+    console.log('✅ Checkout validation passed, starting order creation...');
     try {
       // Create medicine order
       const orderData = {
         orderType: 'medicine',
         items: items.map(item => ({
-          medicine: item.medicine._id,
+          medicine: item.medicineId,
           quantity: item.quantity,
-          price: item.medicine.price,
-          total: item.medicine.price * item.quantity
+          price: item.price,
+          total: item.price * item.quantity
         })),
         subtotal,
         deliveryCharges,
@@ -413,12 +426,15 @@ const CartScreen = () => {
           gateway: 'cashfree'
         },
         deliveryAddress: {
-          street: deliveryAddress || '',
-          city: '',
-          state: '',
-          zipCode: '',
-          phone: '',
-          location: selectedLocation || undefined,
+          street: selectedAddress?.fullAddress || selectedAddress?.line1 || '',
+          city: selectedAddress?.city || '',
+          state: selectedAddress?.state || '',
+          zipCode: selectedAddress?.zipCode || '',
+          phone: selectedAddress?.phone || '',
+          location: selectedAddress?.location ? {
+            lat: selectedAddress.location.latitude,
+            lng: selectedAddress.location.longitude
+          } : undefined,
           distanceKm: distanceKm || undefined
         },
         prescription: lastUploadedPrescriptionId,
@@ -477,11 +493,11 @@ const CartScreen = () => {
       setPaymentVisible(false);
       setPaymentContext(null);
       
-      // Navigate to Orders page after successful payment
+      // Navigate to Orders tab (nested inside CustomerTabs)
       setTimeout(() => {
         const globalNav = (global as any)?.navigation;
         if (globalNav && globalNav.navigate) {
-          globalNav.navigate('Orders');
+          globalNav.navigate('CustomerTabs', { screen: 'Orders' });
         }
       }, 1000);
       
@@ -544,7 +560,18 @@ const CartScreen = () => {
 
       const orderData = {
         items: items.map(item => ({ medicine: item.medicineId, quantity: item.quantity, price: item.price })),
-        deliveryAddress: { street: deliveryAddress, city: 'City', state: 'State', zipCode: '123456', phone: '1234567890', location: selectedLocation || undefined, distanceKm: distanceKm || undefined },
+        deliveryAddress: {
+          street: selectedAddress?.fullAddress || selectedAddress?.line1 || '',
+          city: selectedAddress?.city || '',
+          state: selectedAddress?.state || '',
+          zipCode: selectedAddress?.zipCode || '',
+          phone: selectedAddress?.phone || '',
+          location: selectedAddress?.location ? {
+            lat: selectedAddress.location.latitude,
+            lng: selectedAddress.location.longitude
+          } : undefined,
+          distanceKm: distanceKm || undefined
+        },
         payment: { method: 'cash_on_delivery' },
         notes: '',
         prescriptions: selectedPrescriptionId ? [selectedPrescriptionId] : [],
@@ -559,7 +586,6 @@ const CartScreen = () => {
       if (response.data.success) {
         console.log('Order placed successfully');
         await clear();
-        setDeliveryAddress('');
         setCouponCode('');
         // Clear any cached uploaded prescription so next order requires a fresh upload
         setLastUploadedPrescriptionId(null);
@@ -631,7 +657,12 @@ const CartScreen = () => {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView style={styles.container} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={styles.container}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Cart Items */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Cart Items ({items.length})</Text>
@@ -669,44 +700,34 @@ const CartScreen = () => {
             </Card>
           )}
 
-          {/* Delivery Address */}
+          {/* Delivery Address Selection */}
           <Card style={styles.section}>
-            <Card.Content>
-              <Text style={styles.sectionTitle}>Delivery Address</Text>
-              {!!GOOGLE_KEY && (
-                <>
-                  <TextInput
-                    label="Search location (Google Places)"
-                    value={searchText}
-                    onChangeText={(t)=>{ setSearchText(t); }}
-                    mode="outlined"
-                    style={{ marginBottom: 8 }}
-                    right={<TextInput.Icon icon="magnify" />}
-                  />
-                  {placeSuggestions.length > 0 && (
-                    <View style={{ backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#eee', marginBottom: 8 }}>
-                      {placeSuggestions.slice(0,5).map(s => (
-                        <TouchableOpacity key={s.id} onPress={()=>selectPlace(s.id, s.description)} style={{ padding: 10 }}>
-                          <Text style={{ color: '#333' }}>{s.description}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </>
-              )}
-              <TextInput
-                label="Enter delivery address"
-                value={deliveryAddress}
-                onChangeText={(t)=>{ setDeliveryAddress(t); if (t?.trim()) setAddressError(null); }}
-                mode="outlined"
-                multiline
-                numberOfLines={3}
-                style={[styles.addressInput, addressError ? { borderColor: '#F44336', borderWidth: 1 } : null]}
+            <Card.Content style={styles.addressSectionContent}>
+              <AddressSelection
+                selectedAddress={selectedAddress}
+                onAddressSelect={(address) => {
+                  selectAddress(address);
+                  console.log('📍 Address selected:', address.title);
+                }}
+                onAddNewAddress={() => {
+                  setEditingAddress(null);
+                  setAddressModalVisible(true);
+                }}
+                style={styles.addressSelection}
               />
-              {addressError ? <Text style={{ color: '#F44336', marginTop: 6 }}>{addressError}</Text> : null}
-              {selectedLocation && distanceKm != null ? (
-                <Text style={{ marginTop: 6, color: '#666' }}>Distance: {distanceKm.toFixed(1)} km • Delivery fee will be calculated accordingly.</Text>
-              ) : null}
+              {selectedAddress && (
+                <View style={styles.deliverToRow}>
+                  <Text style={styles.deliverToLabel}>Delivering to:</Text>
+                  <Text style={styles.deliverToValue} numberOfLines={1}>
+                    {selectedAddress.fullAddress || selectedAddress.line1}
+                  </Text>
+                </View>
+              )}
+              {selectedAddress && distanceKm != null && (
+                <Text style={styles.distanceInfo}>
+                  Distance: {distanceKm.toFixed(1)} km • Delivery fee: ₹{dynamicDeliveryCharge}
+                </Text>
+              )}
             </Card.Content>
           </Card>
 
@@ -817,6 +838,18 @@ const CartScreen = () => {
           onFailure={onPaymentFailure}
         />
       )}
+
+      <AddressFormModal
+        visible={addressModalVisible}
+        onDismiss={() => {
+          setAddressModalVisible(false);
+          setEditingAddress(null);
+        }}
+        editingAddress={editingAddress}
+        onSave={(address) => {
+          selectAddress(address);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -1030,6 +1063,38 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  addressSectionContent: {
+    padding: 0,
+  },
+  addressSelection: {
+    maxHeight: 400,
+  },
+  distanceInfo: {
+    marginTop: 8,
+    color: '#666',
+    fontSize: 14,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  deliverToRow: {
+    marginTop: 8,
+    backgroundColor: '#f7f9fc',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e6edf5',
+  },
+  deliverToLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  deliverToValue: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '600',
   },
 });
 

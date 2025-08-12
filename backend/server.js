@@ -6,7 +6,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-require('dotenv').config();
+const config = require('./config/config');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -19,6 +19,7 @@ const adminRoutes = require('./routes/admin');
 const doctorRoutes = require('./routes/doctors');
 const testRoutes = require('./routes/tests');
 const paymentRoutes = require('./routes/payments');
+const addressRoutes = require('./routes/addresses');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -30,7 +31,7 @@ const app = express();
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/epharmacy', {
+mongoose.connect(config.mongodbUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
@@ -43,8 +44,8 @@ app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: (process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000, // 15 minutes
-  max: process.env.RATE_LIMIT_MAX || 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimitWindowMin * 60 * 1000,
+  max: config.rateLimitMax,
   message: {
     error: 'Too many requests from this IP, please try again later.'
   }
@@ -52,28 +53,25 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // CORS configuration
-const allowedOrigins = [
-  'http://localhost:3000',  // Web frontend
-  'http://localhost:8081',  // Expo web (primary port)
-  'http://localhost:8082',  // Mobile app (Expo web)
+const allowedOrigins = new Set([
+  'http://localhost:3000',
+  'http://localhost:8081',
+  'http://localhost:8082',
   'http://localhost:8083',
-  'http://localhost:8084',  // Mobile app (Expo web - alternative port)
-  'http://localhost:19006', // Alternative Expo web port
-  process.env.FRONTEND_URL
-].filter(Boolean);
+  'http://localhost:8084',
+  'http://localhost:19006',
+  ...config.allowedOrigins,
+].filter(Boolean));
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log(`CORS blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: config.allowAllOrigins
+    ? true
+    : function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.has(origin)) return callback(null, true);
+        console.log(`CORS blocked origin: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
+      },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -117,6 +115,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/addresses', addressRoutes);
 
 // Handle 404 errors
 app.use('*', (req, res) => {
@@ -129,10 +128,13 @@ app.use('*', (req, res) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const PORT = config.port || 5000;
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} in ${config.env} mode`);
+  console.log(`Local: http://localhost:${PORT}`);
+  const netIp = config.lanIp || '192.168.0.2';
+  console.log(`Network: http://${netIp}:${PORT}`);
 });
 
 // Handle unhandled promise rejections

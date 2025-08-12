@@ -66,11 +66,11 @@ const orderSchema = new mongoose.Schema({
     },
     scheduledAt: Date,
     address: {
-      line1: { type: String, required: true },
-      city: { type: String, required: true },
-      state: { type: String, required: true },
-      zip: { type: String, required: true },
-      phone: { type: String, required: true }
+      line1: { type: String },
+      city: { type: String },
+      state: { type: String },
+      zip: { type: String },
+      phone: { type: String }
     },
     bookingNumber: String,
     status: {
@@ -147,6 +147,12 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'processing', 'out_for_delivery', 'delivered', 'cancelled'],
     default: 'pending'
   },
+  // Cancellation details
+  cancellation: {
+    reason: { type: String },
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    cancelledAt: { type: Date }
+  },
   
   // Enhanced payment information with tracking
   payment: {
@@ -208,6 +214,34 @@ const orderSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Virtual to indicate if order can be cancelled
+orderSchema.virtual('canBeCancelled').get(function() {
+  // Allow cancellation only when not confirmed/processing/out_for_delivery/delivered/cancelled
+  // As per requirement, only allow when placed i.e., pending
+  return this.status === 'pending';
+});
+
+// Method to cancel an order
+orderSchema.methods.cancel = async function(reason, userId) {
+  if (!this.status || this.status === 'cancelled') return false;
+  if (!this.canBeCancelled) return false;
+
+  this.status = 'cancelled';
+  this.cancellation = {
+    reason: reason || 'Cancelled by customer',
+    cancelledBy: userId || null,
+    cancelledAt: new Date()
+  };
+
+  // If payment was processing/paid, leave as-is for refund workflows; otherwise mark failed
+  if (this.payment && (this.payment.status === 'pending' || this.payment.status === 'processing')) {
+    this.payment.status = 'failed';
+    this.payment.statusHistory.push({ status: 'failed', source: 'user', metadata: { reason: 'order_cancelled' } });
+  }
+  await this.save();
+  return true;
+};
 
 // Generate order number based on type
 orderSchema.pre('save', function(next) {
@@ -284,8 +318,17 @@ orderSchema.methods.addPaymentAttempt = function(gatewayResponse, status, error 
   });
 };
 
-// Validation based on order type
+// Generate order number if not provided (must be first pre-save hook)
 orderSchema.pre('save', function(next) {
+  // Generate order number first, before any validation
+  if (this.isNew && !this.orderNumber) {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    this.orderNumber = `ORD-${timestamp}-${random}`;
+    console.log(`[ORDER] Generated order number: ${this.orderNumber}`);
+  }
+  
+  // Then do validation based on order type
   if (this.orderType === 'medicine') {
     if (!this.items || this.items.length === 0) {
       return next(new Error('Medicine orders must have items'));
@@ -300,6 +343,19 @@ orderSchema.pre('save', function(next) {
   } else if (this.orderType === 'test_booking') {
     if (!this.testBooking || !this.testBooking.test) {
       return next(new Error('Test booking orders must have test booking details'));
+    }
+    // For test bookings, if address is provided, validate all required fields
+    if (this.testBooking.address && (
+        this.testBooking.address.line1 || 
+        this.testBooking.address.city || 
+        this.testBooking.address.state || 
+        this.testBooking.address.zip || 
+        this.testBooking.address.phone
+      )) {
+      const addr = this.testBooking.address;
+      if (!addr.line1 || !addr.city || !addr.state || !addr.zip || !addr.phone) {
+        return next(new Error('Test booking address must include all fields: line1, city, state, zip, and phone'));
+      }
     }
   }
   next();

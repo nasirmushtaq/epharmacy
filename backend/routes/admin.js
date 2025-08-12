@@ -7,6 +7,38 @@ const Delivery = require('../models/Delivery');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
+// Force-approve user
+router.patch('/users/:id/approve', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, { isApproved: true, isActive: true }, { new: true });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, data: user });
+  } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
+});
+
+// Set order status (admin override)
+router.patch('/orders/:id/status', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { status } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    order.status = status;
+    await order.save();
+    res.json({ success: true, data: order });
+  } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
+});
+
+// Inventory adjustments (admin/pharmacist)
+router.patch('/medicines/:id/stock', authenticate, authorize('admin', 'pharmacist'), async (req, res) => {
+  try {
+    const { delta, set } = req.body;
+    const med = await Medicine.findById(req.params.id);
+    if (!med) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    if (typeof set === 'number') med.stockQuantity = set; else if (typeof delta === 'number') med.stockQuantity = (med.stockQuantity || 0) + delta;
+    await med.save();
+    res.json({ success: true, data: med });
+  } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
+});
 
 // @desc    Get dashboard analytics
 // @route   GET /api/admin/dashboard

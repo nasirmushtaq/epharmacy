@@ -50,6 +50,19 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSCameraUsageDescription</key>
+    <string>We require camera access to capture prescription images for orders.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>We require photo library access to upload your prescription images.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>We require permission to save images related to your prescriptions.</string>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>phonepe</string>
+      <string>tez</string>
+      <string>paytm</string>
+      <string>bhim</string>
+    </array>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>

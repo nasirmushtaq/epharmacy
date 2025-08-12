@@ -5,10 +5,173 @@ const Medicine = require('../models/Medicine');
 const Prescription = require('../models/Prescription');
 const Doctor = require('../models/Doctor');
 const Test = require('../models/Test');
+const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 const crypto = require('crypto');
 
 const router = express.Router();
+const https = require('https');
+const { v4: uuidv4 } = require('uuid');
+
+// Function to assign pharmacy based on stock availability and proximity
+async function assignPharmacy(order) {
+  try {
+    if (order.orderType !== 'medicine' || !order.items || order.items.length === 0) {
+      return null; // Only assign pharmacy for medicine orders
+    }
+
+    // Get all pharmacists
+    const pharmacists = await User.find({ 
+      role: 'pharmacist', 
+      isActive: true, 
+      isApproved: true 
+    }).select('_id firstName lastName address');
+
+    if (pharmacists.length === 0) {
+      console.log('[ASSIGN_PHARMACY] No active pharmacists found');
+      return null;
+    }
+
+    // Check stock availability for each pharmacist
+    const pharmacistStockMap = [];
+    
+    for (const pharmacist of pharmacists) {
+      const medicineIds = order.items.map(item => item.medicine);
+      
+      // Find medicines that this pharmacist has in stock
+      const availableMedicines = await Medicine.find({
+        _id: { $in: medicineIds },
+        addedBy: pharmacist._id,
+        stockQuantity: { $gt: 0 },
+        isActive: true,
+        isAvailable: true
+      });
+
+      // Calculate stock coverage percentage
+      let totalItemsNeeded = 0;
+      let availableItemsCount = 0;
+      
+      for (const orderItem of order.items) {
+        totalItemsNeeded += orderItem.quantity;
+        const availableMedicine = availableMedicines.find(m => m._id.toString() === orderItem.medicine.toString());
+        if (availableMedicine && availableMedicine.stockQuantity >= orderItem.quantity) {
+          availableItemsCount += orderItem.quantity;
+        }
+      }
+
+      const stockCoverage = totalItemsNeeded > 0 ? (availableItemsCount / totalItemsNeeded) * 100 : 0;
+      
+      // Calculate distance (simplified - using city match for now)
+      let distance = 100; // Default distance
+      if (order.deliveryAddress && pharmacist.address) {
+        // Simple city match - in real implementation, use geolocation
+        if (pharmacist.address.city && order.deliveryAddress.city) {
+          distance = pharmacist.address.city.toLowerCase() === order.deliveryAddress.city.toLowerCase() ? 5 : 50;
+        }
+      }
+
+      pharmacistStockMap.push({
+        pharmacist: pharmacist._id,
+        stockCoverage,
+        distance,
+        score: stockCoverage - (distance * 0.5) // Higher stock coverage, lower distance = higher score
+      });
+    }
+
+    // Sort by score (highest first) and pick the best one
+    pharmacistStockMap.sort((a, b) => b.score - a.score);
+    
+    const bestPharmacist = pharmacistStockMap[0];
+    if (bestPharmacist && bestPharmacist.stockCoverage > 0) {
+      console.log(`[ASSIGN_PHARMACY] Assigned pharmacy ${bestPharmacist.pharmacist} with ${bestPharmacist.stockCoverage}% stock coverage`);
+      return bestPharmacist.pharmacist;
+    }
+
+    console.log('[ASSIGN_PHARMACY] No pharmacist found with required stock');
+    return null;
+  } catch (error) {
+    console.error('[ASSIGN_PHARMACY] Error:', error);
+    return null;
+  }
+}
+
+async function refundRazorpayPayment({ paymentId, amountInRupees }) {
+  return new Promise((resolve, reject) => {
+    try {
+      const keyId = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keyId || !keySecret) return reject(new Error('Razorpay keys not configured'));
+      const auth = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+      const payload = JSON.stringify({ amount: Math.round(Number(amountInRupees) * 100) });
+      const req = https.request({
+        hostname: 'api.razorpay.com',
+        path: `/v1/payments/${paymentId}/refund`,
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', (d) => data += d);
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(JSON.parse(data || '{}'));
+          } else {
+            reject(new Error(`Razorpay refund failed (${res.statusCode}): ${data}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    } catch (e) { reject(e); }
+  });
+}
+
+async function refundCashfreeOrder({ orderId, amountInRupees }) {
+  return new Promise((resolve, reject) => {
+    try {
+      const appId = process.env.CASHFREE_APP_ID;
+      const secretKey = process.env.CASHFREE_SECRET_KEY;
+      const env = (process.env.CASHFREE_ENV || 'SANDBOX').toUpperCase();
+      if (!appId || !secretKey) return reject(new Error('Cashfree keys not configured'));
+      const host = env === 'PROD' || env === 'PRODUCTION' ? 'api.cashfree.com' : 'sandbox.cashfree.com';
+      const refundId = uuidv4();
+      const payload = JSON.stringify({
+        refund_amount: Number(amountInRupees),
+        refund_note: 'Auto-refund on cancellation before confirmation',
+        refund_id: refundId
+      });
+      const req = https.request({
+        hostname: host,
+        path: `/pg/orders/${encodeURIComponent(orderId)}/refunds`,
+        method: 'POST',
+        headers: {
+          'x-client-id': appId,
+          'x-client-secret': secretKey,
+          'x-api-version': '2022-09-01',
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', (d) => data += d);
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(JSON.parse(data || '{}'));
+          } else {
+            reject(new Error(`Cashfree refund failed (${res.statusCode}): ${data}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    } catch (e) { reject(e); }
+  });
+}
 
 // Create order (unified for all types)
 router.post('/', authenticate, [
@@ -27,8 +190,14 @@ router.post('/', authenticate, [
 
     const { orderType, totalAmount, payment, ...orderData } = req.body;
     
+    // Generate order number
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const orderNumber = `ORD-${timestamp}-${random}`;
+
     // Base order data
     const newOrder = {
+      orderNumber,
       customer: req.user._id,
       orderType,
       totalAmount,
@@ -101,6 +270,18 @@ router.post('/', authenticate, [
     const order = await Order.create(newOrder);
     await order.populate(getPopulateFields(orderType));
 
+    // Assign pharmacy for medicine orders
+    if (orderType === 'medicine') {
+      const assignedPharmacy = await assignPharmacy(order);
+      if (assignedPharmacy) {
+        order.pharmacy = assignedPharmacy;
+        await order.save();
+        console.log(`[ORDERS] Pharmacy assigned: ${assignedPharmacy}`);
+      } else {
+        console.log(`[ORDERS] No pharmacy assigned - order will be visible to all pharmacists`);
+      }
+    }
+
     console.log(`[ORDERS] Order created: ${order.orderNumber} (${orderType})`);
     res.status(201).json({ success: true, data: order });
     
@@ -151,7 +332,17 @@ router.post('/webhooks/razorpay', express.raw({ type: '*/*' }), async (req, res)
       const entityType = notes.entityType;
       const entityId = notes.entityId;
       if (entityType === 'order' && entityId) {
-        await Order.findByIdAndUpdate(entityId, { 'payment.status': 'paid', status: 'confirmed' });
+        const order = await Order.findByIdAndUpdate(entityId, { 'payment.status': 'paid', status: 'confirmed' }, { new: true });
+        
+        // Assign pharmacy if not already assigned for medicine orders
+        if (order && order.orderType === 'medicine' && !order.pharmacy) {
+          const assignedPharmacy = await assignPharmacy(order);
+          if (assignedPharmacy) {
+            order.pharmacy = assignedPharmacy;
+            await order.save();
+            console.log(`[WEBHOOK] Pharmacy assigned after payment: ${assignedPharmacy}`);
+          }
+        }
       }
     } else if (type === 'refund.processed') {
       const notes = payload?.refund?.entity?.notes || {};
@@ -337,20 +528,12 @@ router.patch('/:id/status', authenticate, async (req, res) => {
 // @desc    Cancel order
 // @route   PATCH /api/orders/:id/cancel
 // @access  Private (Customer/Admin only)
-router.patch('/:id/cancel', authenticate, [
-  body('reason').trim().notEmpty().withMessage('Cancellation reason is required')
-], async (req, res) => {
+router.patch('/:id/cancel', authenticate, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
-
-    const { reason } = req.body;
+    console.log(`[ORDERS] Cancel request: id=${req.params.id} by=${req.user?._id} body=${JSON.stringify(req.body || {})}`);
+    const reason = (req.body && typeof req.body.reason === 'string' && req.body.reason.trim())
+      ? req.body.reason.trim()
+      : 'Cancelled by customer';
     const order = await Order.findById(req.params.id).populate('items.medicine');
 
     if (!order) {
@@ -368,10 +551,11 @@ router.patch('/:id/cancel', authenticate, [
       });
     }
 
+    // Allow cancellation only when order is just placed (pending)
     if (!order.canBeCancelled) {
       return res.status(400).json({
         success: false,
-        message: 'Order cannot be cancelled at this stage'
+        message: 'Order cannot be cancelled at this stage. Only newly placed orders can be cancelled.'
       });
     }
 
@@ -383,11 +567,52 @@ router.patch('/:id/cancel', authenticate, [
       );
     }
 
-    await order.cancel(reason, req.user._id);
+    const ok = await order.cancel(reason, req.user._id);
+    if (!ok) {
+      return res.status(400).json({ success: false, message: 'Order cancellation rejected' });
+    }
+
+    // Auto-refund: for Razorpay only when captured; for Cashfree try if we have gateway orderId
+    let refund = { attempted: false, success: false, message: null, gatewayResponse: null };
+    try {
+      if (order.payment && order.payment.method === 'online') {
+        const amount = order.payment.amount || order.totalAmount;
+        if (order.payment.gateway === 'razorpay') {
+          if (order.payment.status === 'paid' && order.payment.paymentId) {
+            refund.attempted = true;
+            const rp = await refundRazorpayPayment({ paymentId: order.payment.paymentId, amountInRupees: amount });
+            refund.success = true;
+            refund.gatewayResponse = rp;
+            order.updatePaymentStatus('refunded', 'admin', { reason: 'auto_refund_on_cancel', refundGateway: 'razorpay', rp });
+            await order.save();
+          } else {
+            refund.message = 'Razorpay refund skipped (not paid or missing paymentId)';
+          }
+        } else if (order.payment.gateway === 'cashfree') {
+          const cfOrderId = order.payment.gatewayOrderId || order.orderNumber;
+          if (cfOrderId) {
+            refund.attempted = true;
+            const cf = await refundCashfreeOrder({ orderId: cfOrderId, amountInRupees: amount });
+            refund.success = true;
+            refund.gatewayResponse = cf;
+            order.updatePaymentStatus('refunded', 'admin', { reason: 'auto_refund_on_cancel', refundGateway: 'cashfree', cf });
+            await order.save();
+          } else {
+            refund.message = 'Missing Cashfree orderId for refund';
+          }
+        } else {
+          refund.message = 'Unsupported or missing gateway/paymentId for refund';
+        }
+      }
+    } catch (e) {
+      console.error('[ORDERS][CANCEL][REFUND_ERROR]', e);
+      refund.message = e.message || 'Refund failed';
+    }
 
     res.json({
       success: true,
-      message: 'Order cancelled successfully'
+      message: 'Order cancelled successfully',
+      data: { refund }
     });
 
   } catch (error) {
@@ -399,6 +624,63 @@ router.patch('/:id/cancel', authenticate, [
   }
 });
 
+// Reorder items from a previous order (returns items so client can add to cart)
+router.post('/:id/reorder', authenticate, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id)
+      .populate('items.medicine')
+      .populate('prescription');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (order.customer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'You can only reorder your own orders' });
+    }
+    const items = [];
+    const unavailable = [];
+    const adjusted = [];
+
+    for (const it of (order.items || [])) {
+      const med = it.medicine;
+      const medId = med?._id?.toString() || it.medicine?.toString();
+      if (!medId) continue;
+      const isActive = med?.isActive !== false;
+      const isAvailable = med?.isAvailable !== false;
+      const stockQty = typeof med?.stockQuantity === 'number' ? med.stockQuantity : 0;
+      if (!isActive || !isAvailable || stockQty <= 0) {
+        unavailable.push({ medicineId: medId, name: med?.name || 'Medicine', reason: 'unavailable' });
+        continue;
+      }
+      const desiredQty = it.quantity || 1;
+      const finalQty = Math.min(desiredQty, stockQty);
+      if (finalQty <= 0) {
+        unavailable.push({ medicineId: medId, name: med?.name || 'Medicine', reason: 'out_of_stock' });
+        continue;
+      }
+      if (finalQty < desiredQty) {
+        adjusted.push({ medicineId: medId, name: med?.name || 'Medicine', from: desiredQty, to: finalQty });
+      }
+      items.push({
+        medicineId: medId,
+        name: med?.name || 'Medicine',
+        price: it.price,
+        quantity: finalQty,
+        isPrescriptionRequired: med?.isPrescriptionRequired || false,
+      });
+    }
+
+    let prescriptionId = null;
+    if (order.isPrescriptionOrder && order.prescription && order.prescription._id) {
+      const p = order.prescription;
+      if (p.isExpired === false || typeof p.isExpired === 'undefined') {
+        prescriptionId = p._id.toString();
+      }
+    }
+
+    res.json({ success: true, data: { items, unavailable, adjusted, prescriptionId } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // @desc    Get orders for processing (Pharmacist)
 // @route   GET /api/orders/pending
 // @access  Private (Pharmacist/Admin only)
@@ -407,9 +689,25 @@ router.get('/status/pending', authenticate, authorize('pharmacist', 'admin'), as
     const { page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const orders = await Order.find({
+    // Build filter based on user role
+    let filter = {
       status: { $in: ['pending', 'confirmed', 'processing'] }
-    })
+    };
+    
+    // For pharmacists, only show orders assigned to them or unassigned orders (for medicine orders)
+    if (req.user.role === 'pharmacist') {
+      filter.$or = [
+        // Orders assigned to this pharmacist
+        { pharmacy: req.user._id },
+        // Unassigned medicine orders (so they can be picked up)
+        { orderType: 'medicine', pharmacy: { $exists: false } },
+        { orderType: 'medicine', pharmacy: null },
+        // Non-medicine orders (doctor/test bookings - all pharmacists can see)
+        { orderType: { $ne: 'medicine' } }
+      ];
+    }
+
+    const orders = await Order.find(filter)
     .populate('customer', 'firstName lastName phone')
     .populate('items.medicine', 'name brand')
     .sort({ priority: -1, createdAt: 1 })
@@ -563,5 +861,81 @@ function getPopulateFields(orderType) {
       return baseFields;
   }
 }
+
+// @desc    Assign pharmacy to order (claim order)
+// @route   PATCH /api/orders/:id/claim
+// @access  Private (Pharmacist only)
+router.patch('/:id/claim', authenticate, authorize('pharmacist'), async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+    
+    if (order.orderType !== 'medicine') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only medicine orders can be claimed'
+      });
+    }
+    
+    if (order.pharmacy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order is already assigned to a pharmacy'
+      });
+    }
+    
+    // Check if pharmacist has required medicines in stock
+    const medicineIds = order.items.map(item => item.medicine);
+    const availableMedicines = await Medicine.find({
+      _id: { $in: medicineIds },
+      addedBy: req.user._id,
+      stockQuantity: { $gt: 0 },
+      isActive: true,
+      isAvailable: true
+    });
+    
+    // Verify stock availability for all items
+    let hasAllStock = true;
+    for (const orderItem of order.items) {
+      const medicine = availableMedicines.find(m => m._id.toString() === orderItem.medicine.toString());
+      if (!medicine || medicine.stockQuantity < orderItem.quantity) {
+        hasAllStock = false;
+        break;
+      }
+    }
+    
+    if (!hasAllStock) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient stock for one or more items in this order'
+      });
+    }
+    
+    // Assign the order to this pharmacist
+    order.pharmacy = req.user._id;
+    await order.save();
+    
+    await order.populate('pharmacy', 'firstName lastName pharmacyName');
+    
+    res.json({
+      success: true,
+      message: 'Order claimed successfully',
+      data: order
+    });
+    
+  } catch (error) {
+    console.error('Claim order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
 
 module.exports = router; 

@@ -113,7 +113,7 @@ const OrdersScreen = () => {
     }
   };
 
-  const handleReorder = async (order: Order) => {
+  const handleReorder = async (order: any) => {
     Alert.alert(
       'Reorder Items',
       `Add all items from order ${order.orderNumber} to cart?`,
@@ -121,7 +121,7 @@ const OrdersScreen = () => {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Add to Cart', onPress: async () => {
           try {
-            // In a real app, you would add these items to the cart
+            await api.post(`/api/orders/${order._id}/reorder`);
             Alert.alert('Success', 'Items added to cart!');
           } catch (error) {
             Alert.alert('Error', 'Failed to add items to cart');
@@ -131,8 +131,8 @@ const OrdersScreen = () => {
     );
   };
 
-  const handleCancelOrder = async (order: Order) => {
-    if (order.status === 'pending' || order.status === 'confirmed') {
+  const handleCancelOrder = async (order: any) => {
+    if (order.status === 'pending') {
       Alert.alert(
         'Cancel Order',
         `Are you sure you want to cancel order ${order.orderNumber}?`,
@@ -140,7 +140,7 @@ const OrdersScreen = () => {
           { text: 'No', style: 'cancel' },
           { text: 'Yes, Cancel', style: 'destructive', onPress: async () => {
             try {
-              const response = await api.patch(`/api/orders/${order._id}/cancel`);
+              const response = await api.patch(`/api/orders/${order._id}/cancel`, { reason: 'Cancelled by customer' });
               if (response.data.success) {
                 Alert.alert('Order Cancelled', 'Your order has been cancelled successfully.');
                 refetch(); // Refresh the orders list
@@ -152,7 +152,7 @@ const OrdersScreen = () => {
         ]
       );
     } else {
-      Alert.alert('Cannot Cancel', 'This order cannot be cancelled as it is already being processed.');
+      Alert.alert('Not Allowed', 'You can only cancel orders that are just placed (pending).');
     }
   };
 

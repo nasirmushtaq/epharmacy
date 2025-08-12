@@ -8,6 +8,7 @@ import 'react-native-gesture-handler';
 
 import { AuthProvider } from './src/contexts/AuthContext';
 import { CartProvider } from './src/contexts/CartContext';
+import { AddressProvider } from './src/contexts/AddressContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
 // Global error logging
@@ -35,8 +36,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Globally disable Alert.alert
-Alert.alert = () => {};
+// Ensure Alert dialogs are enabled for confirmations
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -69,8 +69,10 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <CartProvider>
-              <StatusBar style="light" backgroundColor="#2196F3" />
-              <AppNavigator />
+              <AddressProvider>
+                <StatusBar style="light" backgroundColor="#2196F3" />
+                <AppNavigator />
+              </AddressProvider>
             </CartProvider>
           </AuthProvider>
         </QueryClientProvider>

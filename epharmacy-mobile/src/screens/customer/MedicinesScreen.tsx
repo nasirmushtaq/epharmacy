@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   FlatList,
@@ -23,28 +23,70 @@ import { Medicine } from '../../types/global';
 import { useCart } from '../../contexts/CartContext';
 import { useNavigation } from '@react-navigation/native';
 
+// Simple inline debounce hook
+function useDebouncedValue(value: string, delay: number): string {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 const MedicinesScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const navigation = useNavigation<any>();
 
-  // Fetch medicines from API instead of using mock data
-  const { data: medicines = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['medicines'],
+  // Debounce search query to reduce API calls
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 500);
+
+  // Fetch medicines from API with server-side filtering
+  const { data: medicinesResponse, isLoading, error, refetch } = useQuery({
+    queryKey: ['medicines', debouncedSearchQuery, selectedCategory],
     queryFn: async () => {
-      const response = await api.get('/api/medicines');
-      return response.data.data || []; // Backend returns medicines in 'data' field, not 'medicines'
-    }
+      console.log('🔍 Fetching medicines with search:', debouncedSearchQuery, 'category:', selectedCategory);
+      
+      // Build query parameters
+      const params = new URLSearchParams();
+      
+      if (debouncedSearchQuery.trim()) {
+        params.append('search', debouncedSearchQuery.trim());
+      }
+      
+      if (selectedCategory !== 'all') {
+        params.append('category', selectedCategory);
+      }
+      
+      // Add pagination and sorting
+      params.append('limit', '50');
+      params.append('sortBy', 'name');
+      params.append('sortOrder', 'asc');
+      
+      const queryString = params.toString();
+      const url = `/api/medicines${queryString ? `?${queryString}` : ''}`;
+      
+      console.log('🔍 API URL:', url);
+      const response = await api.get(url);
+      console.log('🔍 API Response:', response.data);
+      
+      return response.data; // Return full response with pagination info
+    },
+    staleTime: 30000, // Cache results for 30 seconds
   });
 
-  const categories = ['analgesic', 'antibiotic', 'vitamin', 'cardiac', 'dermatology'];
+  // Extract medicines and pagination from response
+  const medicines = (medicinesResponse as any)?.data || [];
+  const pagination = (medicinesResponse as any)?.pagination || {};
 
-  const filteredMedicines = medicines.filter((medicine: Medicine) => {
-    const matchesSearch = medicine.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         medicine.brand.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || medicine.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const categories = ['tablets', 'capsules', 'syrups', 'injections', 'ointments', 'supplements', 'antibiotics', 'painkillers'];
 
   const { addItem, items } = useCart();
 
@@ -99,7 +141,7 @@ const MedicinesScreen = () => {
   }
 
   const renderMedicineCard = ({ item }: { item: Medicine }) => (
-    <Card style={styles.medicineCard}>
+    <Card style={styles.medicineCard} onPress={() => navigation.navigate('MedicineDetail', { id: item._id })}>
       <Card.Content>
         <View style={styles.cardHeader}>
           <View style={styles.medicineInfo}>
@@ -220,26 +262,72 @@ const MedicinesScreen = () => {
       {/* Results Info */}
       <View style={styles.resultsContainer}>
         <Text style={styles.resultsText}>
-          {filteredMedicines.length} medicine{filteredMedicines.length !== 1 ? 's' : ''} found
+          {pagination.total ? `${pagination.total} medicine${pagination.total !== 1 ? 's' : ''} found` : `${medicines.length} medicine${medicines.length !== 1 ? 's' : ''} found`}
+          {debouncedSearchQuery && ` for "${debouncedSearchQuery}"`}
+          {selectedCategory !== 'all' && ` in ${selectedCategory}`}
         </Text>
+        {pagination.pages > 1 && (
+          <Text style={styles.paginationText}>
+            Page {pagination.current} of {pagination.pages}
+          </Text>
+        )}
       </View>
 
       {/* Medicines List */}
       <FlatList
-        data={filteredMedicines}
+        data={medicines}
         renderItem={renderMedicineCard}
         keyExtractor={(item) => item._id}
         style={styles.medicinesList}
         contentContainerStyle={styles.medicinesContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <IconButton icon="search-off" size={64} iconColor="#ccc" />
-            <Text style={styles.emptyText}>No medicines found</Text>
-            <Text style={styles.emptySubtext}>Try adjusting your search or filters</Text>
-          </View>
+          !isLoading ? (
+            <View style={styles.emptyContainer}>
+              <IconButton icon="search-off" size={64} iconColor="#ccc" />
+              <Text style={styles.emptyText}>
+                {debouncedSearchQuery || selectedCategory !== 'all'
+                  ? 'No medicines found matching your criteria'
+                  : 'No medicines available'
+                }
+              </Text>
+              <Text style={styles.emptySubtext}>
+                {debouncedSearchQuery 
+                  ? 'Try adjusting your search terms or category filters'
+                  : 'Check back later for new medicines'
+                }
+              </Text>
+            </View>
+          ) : null
+        }
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={refetch} />
         }
       />
+
+      {/* Loading state for initial load */}
+      {isLoading && medicines.length === 0 && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>
+            {debouncedSearchQuery ? 'Searching medicines...' : 'Loading medicines...'}
+          </Text>
+        </View>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Failed to load medicines</Text>
+          <Button mode="outlined" onPress={() => {
+            // Force re-query by changing search state
+            setSearchQuery(prev => prev + ' ');
+            setTimeout(() => setSearchQuery(prev => prev.trim()), 100);
+          }}>
+            Retry
+          </Button>
+        </View>
+      )}
     </View>
   );
 };
@@ -254,18 +342,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  errorText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#F44336',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
+
   searchContainer: {
     margin: 16,
     borderRadius: 12,
@@ -408,6 +485,35 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 8,
+  },
+  paginationText: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 64,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 64,
+    paddingHorizontal: 32,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#F44336',
+    textAlign: 'center',
+    marginBottom: 16,
   },
 });
 

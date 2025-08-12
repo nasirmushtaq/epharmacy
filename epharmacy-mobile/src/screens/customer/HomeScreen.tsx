@@ -51,7 +51,7 @@ const HomeScreen = ({ navigation }: any) => {
       icon: 'local-pharmacy',
       color: '#4CAF50',
       action: () => handleNavigation('Medicines'),
-      show: true
+      show: state.user?.role === 'customer' // Only show for customers
     },
     {
       id: 2,
@@ -60,7 +60,7 @@ const HomeScreen = ({ navigation }: any) => {
       icon: 'file-upload',
       color: '#2196F3',
       action: () => handleNavigation('Prescriptions'),
-      show: true
+      show: state.user?.role === 'customer' // Only show for customers
     },
     {
       id: 3,
@@ -78,7 +78,7 @@ const HomeScreen = ({ navigation }: any) => {
       icon: 'shopping-cart',
       color: '#9C27B0',
       action: () => handleNavigation('Cart'),
-      show: true
+      show: state.user?.role === 'customer' // Only show for customers
     },
     {
       id: 5,
@@ -100,11 +100,11 @@ const HomeScreen = ({ navigation }: any) => {
     },
     {
       id: 7,
-      title: 'Order Management',
-      subtitle: 'Process and track orders',
-      icon: 'manage-search',
+      title: 'Pending Orders',
+      subtitle: 'Process customer orders',
+      icon: 'pending-actions',
       color: '#E91E63',
-      action: () => handleNavigation('OrderManagement'),
+      action: () => handleNavigation('Orders'), // Navigate to Orders tab directly
       show: state.user?.role === 'pharmacist'
     },
     {

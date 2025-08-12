@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, ReactNode } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { authApi } from '../services/api';
 import { User, AuthState } from '../types/global';
+import { QueryClient, focusManager, onlineManager, useQueryClient } from '@tanstack/react-query';
 
 // Action types
 const actionTypes = {
@@ -65,6 +66,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const queryClient = useQueryClient?.() as any;
 
   // Load user from AsyncStorage on app start
   useEffect(() => {
@@ -117,6 +119,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           type: actionTypes.SET_USER,
           payload: { user, token }
         });
+        // Clear query cache on login to avoid cross-user cached data
+        try { queryClient?.clear?.(); } catch {}
         return { success: true };
       } else {
         dispatch({ type: actionTypes.SET_ERROR, payload: message || 'Login failed' });
@@ -144,6 +148,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           type: actionTypes.SET_USER,
           payload: { user, token }
         });
+        try { queryClient?.clear?.(); } catch {}
         return { success: true };
       } else {
         dispatch({ type: actionTypes.SET_ERROR, payload: message || 'Registration failed' });
@@ -160,6 +165,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await AsyncStorage.removeItem('token');
       dispatch({ type: actionTypes.LOGOUT });
+      // Clear all caches and any user-scoped storage keys that may leak
+      try { queryClient?.clear?.(); } catch {}
+      try {
+        // Optionally clear guest cart to avoid mixing
+        // Keep user carts intact; CartContext switches key on next mount
+      } catch {}
     } catch (error) {
       console.error('Logout error:', error);
     }

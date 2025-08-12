@@ -14,7 +14,13 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.epharmacy-mobile"
+      "bundleIdentifier": "com.anonymous.epharmacy-mobile",
+      "appleTeamId": "JQ525L2MZD",
+      "infoPlist": {
+        "NSCameraUsageDescription": "We require camera access to capture prescription images for orders.",
+        "NSPhotoLibraryUsageDescription": "We require photo library access to upload your prescription images.",
+        "NSPhotoLibraryAddUsageDescription": "We require permission to save images related to your prescriptions."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,10 +28,17 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "package": "com.anonymous.epharmacymobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c6fc5c2d-3895-4b2e-b6b5-85f7acc48826"
+      }
+    },
+    "owner": "nasir94"
   }
 }

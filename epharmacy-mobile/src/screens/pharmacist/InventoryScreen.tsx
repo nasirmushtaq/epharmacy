@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, FlatList, StyleSheet, Alert, ScrollView } from 'react-native';
-import { Card, Text, Button, IconButton, Surface, Divider, TextInput, Chip, FAB, Searchbar, ActivityIndicator } from 'react-native-paper';
+import { Card, Text, Button, IconButton, Surface, Divider, TextInput, Chip, FAB, Searchbar, ActivityIndicator, Modal, Portal } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
@@ -21,6 +21,22 @@ interface InventoryItem {
 const InventoryScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newMedicine, setNewMedicine] = useState({
+    name: '',
+    genericName: '',
+    brand: '',
+    manufacturer: '',
+    description: '',
+    category: 'tablets',
+    sellingPrice: '',
+    mrp: '',
+    stockQuantity: '',
+    minStockLevel: '',
+    expiryDate: '',
+    batchNumber: '',
+    isPrescriptionRequired: false
+  });
   const queryClient = useQueryClient();
 
   const { data: inventory = [], isLoading, error, refetch } = useQuery({
@@ -49,6 +65,47 @@ const InventoryScreen = () => {
     mutationFn: async (id: string) => api.delete(`/api/medicines/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory'] }),
   });
+
+  const addMedicineMutation = useMutation({
+    mutationFn: async (medicineData: any) => {
+      const formData = {
+        ...medicineData,
+        sellingPrice: parseFloat(medicineData.sellingPrice),
+        mrp: parseFloat(medicineData.mrp),
+        stockQuantity: parseInt(medicineData.stockQuantity),
+        minStockLevel: parseInt(medicineData.minStockLevel),
+        expiryDate: new Date(medicineData.expiryDate).toISOString()
+      };
+      return api.post('/api/medicines', formData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setShowAddModal(false);
+      resetForm();
+      Alert.alert('Success', 'Medicine added successfully');
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.response?.data?.message || 'Failed to add medicine');
+    }
+  });
+
+  const resetForm = () => {
+    setNewMedicine({
+      name: '',
+      genericName: '',
+      brand: '',
+      manufacturer: '',
+      description: '',
+      category: 'tablets',
+      sellingPrice: '',
+      mrp: '',
+      stockQuantity: '',
+      minStockLevel: '',
+      expiryDate: '',
+      batchNumber: '',
+      isPrescriptionRequired: false
+    });
+  };
 
   const filterOptions = ['all', 'low_stock', 'out_of_stock', 'inactive'];
 
@@ -138,6 +195,8 @@ const InventoryScreen = () => {
     </Card>
   );
 
+  const categories = ['tablets', 'capsules', 'syrups', 'injections', 'ointments', 'drops', 'inhalers', 'supplements', 'antibiotics', 'painkillers'];
+
   return (
     <View style={{ flex: 1 }}>
       <Surface style={{ padding: 12 }}>
@@ -151,6 +210,171 @@ const InventoryScreen = () => {
         </View>
       </Surface>
       <FlatList data={filtered} renderItem={renderItem} keyExtractor={(it) => it._id} />
+      
+      {/* Floating Action Button */}
+      <FAB
+        style={{ position: 'absolute', margin: 16, right: 0, bottom: 0 }}
+        icon="plus"
+        onPress={() => setShowAddModal(true)}
+        label="Add Medicine"
+      />
+
+      {/* Add Medicine Modal */}
+      <Portal>
+        <Modal
+          visible={showAddModal}
+          onDismiss={() => setShowAddModal(false)}
+          contentContainerStyle={{ backgroundColor: 'white', padding: 20, margin: 20, borderRadius: 12, maxHeight: '90%' }}
+        >
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text variant="headlineSmall" style={{ marginBottom: 20, textAlign: 'center', fontWeight: 'bold' }}>
+              Add New Medicine
+            </Text>
+            
+            <TextInput
+              mode="outlined"
+              label="Medicine Name *"
+              value={newMedicine.name}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, name: text })}
+              style={{ marginBottom: 12 }}
+            />
+            
+            <TextInput
+              mode="outlined"
+              label="Generic Name *"
+              value={newMedicine.genericName}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, genericName: text })}
+              style={{ marginBottom: 12 }}
+            />
+            
+            <TextInput
+              mode="outlined"
+              label="Brand *"
+              value={newMedicine.brand}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, brand: text })}
+              style={{ marginBottom: 12 }}
+            />
+            
+            <TextInput
+              mode="outlined"
+              label="Manufacturer *"
+              value={newMedicine.manufacturer}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, manufacturer: text })}
+              style={{ marginBottom: 12 }}
+            />
+
+            <View style={{ marginBottom: 12 }}>
+              <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Category *</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {categories.map(cat => (
+                  <Chip
+                    key={cat}
+                    selected={newMedicine.category === cat}
+                    onPress={() => setNewMedicine({ ...newMedicine, category: cat })}
+                    style={{ marginRight: 8, marginBottom: 8 }}
+                  >
+                    {cat}
+                  </Chip>
+                ))}
+              </View>
+            </View>
+            
+            <TextInput
+              mode="outlined"
+              label="Description *"
+              value={newMedicine.description}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, description: text })}
+              multiline
+              numberOfLines={3}
+              style={{ marginBottom: 12 }}
+            />
+            
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <TextInput
+                mode="outlined"
+                label="MRP *"
+                value={newMedicine.mrp}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, mrp: text })}
+                keyboardType="numeric"
+                style={{ flex: 1 }}
+              />
+              <TextInput
+                mode="outlined"
+                label="Selling Price *"
+                value={newMedicine.sellingPrice}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, sellingPrice: text })}
+                keyboardType="numeric"
+                style={{ flex: 1 }}
+              />
+            </View>
+            
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <TextInput
+                mode="outlined"
+                label="Stock Quantity *"
+                value={newMedicine.stockQuantity}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, stockQuantity: text })}
+                keyboardType="numeric"
+                style={{ flex: 1 }}
+              />
+              <TextInput
+                mode="outlined"
+                label="Min Stock Level *"
+                value={newMedicine.minStockLevel}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, minStockLevel: text })}
+                keyboardType="numeric"
+                style={{ flex: 1 }}
+              />
+            </View>
+            
+            <TextInput
+              mode="outlined"
+              label="Batch Number *"
+              value={newMedicine.batchNumber}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, batchNumber: text })}
+              style={{ marginBottom: 12 }}
+            />
+            
+            <TextInput
+              mode="outlined"
+              label="Expiry Date (YYYY-MM-DD) *"
+              value={newMedicine.expiryDate}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, expiryDate: text })}
+              placeholder="2025-12-31"
+              style={{ marginBottom: 12 }}
+            />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+              <Chip
+                selected={newMedicine.isPrescriptionRequired}
+                onPress={() => setNewMedicine({ ...newMedicine, isPrescriptionRequired: !newMedicine.isPrescriptionRequired })}
+                icon={newMedicine.isPrescriptionRequired ? "check" : "plus"}
+              >
+                Prescription Required
+              </Chip>
+            </View>
+            
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Button
+                mode="outlined"
+                onPress={() => setShowAddModal(false)}
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={() => addMedicineMutation.mutate(newMedicine)}
+                loading={addMedicineMutation.isPending}
+                disabled={!newMedicine.name || !newMedicine.genericName || !newMedicine.brand}
+                style={{ flex: 1 }}
+              >
+                Add Medicine
+              </Button>
+            </View>
+          </ScrollView>
+        </Modal>
+      </Portal>
     </View>
   );
 };

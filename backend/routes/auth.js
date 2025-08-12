@@ -3,10 +3,25 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 const { uploadProfileImage } = require('../middleware/upload');
+const config = require('../config/config');
+const nodemailer = require('nodemailer');
+let mailer = null;
+if (config.mail.host && config.mail.user) {
+  mailer = nodemailer.createTransport({
+    host: config.mail.host,
+    port: config.mail.port,
+    secure: config.mail.secure,
+    auth: { user: config.mail.user, pass: config.mail.pass }
+  });
+}
+let twilioClient = null;
+if (config.sms.twilioSid && config.sms.twilioAuth) {
+  twilioClient = require('twilio')(config.sms.twilioSid, config.sms.twilioAuth);
+}
 
 const router = express.Router();
 
-// @desc    Register user
+// @desc    Register user (creates user, issues OTP requirement)
 // @route   POST /api/auth/register
 // @access  Public
 router.post('/register', uploadProfileImage, [
@@ -70,6 +85,16 @@ router.post('/register', uploadProfileImage, [
       vehicleNumber,
       drivingLicense
     } = req.body;
+
+    // Enforce allowed pincodes for customer accounts
+    try {
+      if (role === 'customer' && Array.isArray(config.allowedPincodes) && config.allowedPincodes.length > 0) {
+        const pin = String(address?.zipCode || '').trim();
+        if (!pin || !config.allowedPincodes.includes(pin)) {
+          return res.status(400).json({ success: false, message: 'Service not available at this pincode' });
+        }
+      }
+    } catch {}
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -137,22 +162,28 @@ router.post('/register', uploadProfileImage, [
     // Create user
     const user = await User.create(userData);
 
-    // Generate JWT token
-    const token = user.generateAuthToken();
+    // Create an OTP record (fallback dummy)
+    const code = config.otp.dummy;
+    user.otp = {
+      code,
+      channel: user.email ? 'email' : 'phone',
+      expireAt: new Date(Date.now() + config.otp.ttlMin * 60 * 1000)
+    };
+    await user.save();
+
+    // Attempt to send via email/SMS (best-effort)
+    try {
+      if (mailer && user.email) {
+        await mailer.sendMail({ from: config.mail.from, to: user.email, subject: 'Your OTP Code', text: `Your OTP code is ${code}` });
+      } else if (twilioClient && user.phone && config.sms.from) {
+        await twilioClient.messages.create({ to: user.phone, from: config.sms.from, body: `Your OTP code is ${code}` });
+      }
+    } catch {}
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
-      token,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        profileImage: user.profileImage,
-        isEmailVerified: user.isEmailVerified
-      }
+      message: 'User registered. Please verify OTP to activate your account.',
+      data: { userId: user._id, otpChannel: user.otp.channel }
     });
 
   } catch (error) {
@@ -187,6 +218,11 @@ router.post('/login', [
     try {
       // Authenticate user
       const user = await User.getAuthenticated(email.toLowerCase(), password);
+
+      // Require OTP verification (email or phone) before issuing token
+      if (!user.isEmailVerified && !user.isPhoneVerified) {
+        return res.status(403).json({ success: false, message: 'OTP verification required' });
+      }
 
       // Update last login
       user.lastLogin = new Date();
@@ -223,6 +259,64 @@ router.post('/login', [
       success: false,
       message: 'Server error during login'
     });
+  }
+});
+
+// @desc    Request OTP (email or phone)
+// @route   POST /api/auth/request-otp
+// @access  Public
+router.post('/request-otp', [
+  body('email').optional().isEmail(),
+  body('phone').optional().isString()
+], async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    const user = await User.findOne(email ? { email: email.toLowerCase() } : { phone });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    const code = config.otp.dummy;
+    user.otp = { code, channel: email ? 'email' : 'phone', expireAt: new Date(Date.now() + config.otp.ttlMin * 60 * 1000) };
+    await user.save();
+    try {
+      if (mailer && email) {
+        await mailer.sendMail({ from: config.mail.from, to: email.toLowerCase(), subject: 'Your OTP Code', text: `Your OTP code is ${code}` });
+      } else if (twilioClient && phone && config.sms.from) {
+        await twilioClient.messages.create({ to: phone, from: config.sms.from, body: `Your OTP code is ${code}` });
+      }
+    } catch {}
+    res.json({ success: true, message: 'OTP sent', data: { otpChannel: user.otp.channel } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
+// @access  Public
+router.post('/verify-otp', [
+  body('email').optional().isEmail(),
+  body('phone').optional().isString(),
+  body('code').notEmpty().withMessage('Code is required')
+], async (req, res) => {
+  try {
+    const { email, phone, code } = req.body;
+    const user = await User.findOne(email ? { email: email.toLowerCase() } : { phone });
+    if (!user || !user.otp || !user.otp.code) {
+      return res.status(400).json({ success: false, message: 'OTP not requested' });
+    }
+    if (user.otp.expireAt && user.otp.expireAt < new Date()) {
+      return res.status(400).json({ success: false, message: 'OTP expired' });
+    }
+    if (String(code).trim() !== String(user.otp.code).trim()) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+    if (email) user.isEmailVerified = true; else user.isPhoneVerified = true;
+    user.otp = undefined;
+    await user.save();
+    // Issue token now
+    const token = user.generateAuthToken();
+    res.json({ success: true, message: 'Verified', token, user: { id: user._id, email: user.email, role: user.role } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 

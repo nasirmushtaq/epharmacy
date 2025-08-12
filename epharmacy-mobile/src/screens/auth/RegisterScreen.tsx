@@ -46,28 +46,12 @@ const RegisterScreen = ({ navigation }: any) => {
       const res = await authApi.post('/api/auth/register', payload);
       return res.data;
     },
-    onSuccess: (data: any) => {
-      setMsg('Registration successful.');
-      // Optionally upload profile image immediately
-      const upload = async () => {
-        try {
-          if (!profileUri) return;
-          const fd = new FormData();
-          // field name 'profile' expected by backend uploadProfileImage
-          const name = `profile_${Date.now()}.jpg`;
-          if (Platform.OS === 'web') {
-            const res = await fetch(profileUri);
-            const blob = await res.blob();
-            // @ts-ignore
-            fd.append('profile', new File([blob], name, { type: blob.type || 'image/jpeg' }));
-          } else {
-            // @ts-ignore
-            fd.append('profile', { uri: profileUri, name, type: 'image/jpeg' });
-          }
-          await authApi.put('/api/auth/profile', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-        } catch (e) { console.log('Profile image upload skipped/failed', e?.message || e); }
-      };
-      upload().finally(()=> setTimeout(() => navigation.navigate('Login'), 600));
+    onSuccess: async (data: any) => {
+      setMsg('Registered. Please verify OTP sent to your email/phone.');
+      try {
+        await authApi.post('/api/auth/request-otp', { email });
+      } catch {}
+      navigation.navigate('OtpVerify', { email });
     },
     onError: (e: any) => { console.error('Register error:', e.response?.data || e); setMsg(e.response?.data?.message || 'Registration failed'); }
   });

@@ -131,7 +131,7 @@ router.get('/my-prescriptions', authenticate, authorize('customer'), async (req,
 // @desc    Get prescription for review (Pharmacist)
 // @route   GET /api/prescriptions/pending-reviews
 // @access  Private (Pharmacist only)
-router.get('/pending-reviews', authenticate, authorize('pharmacist'), checkPharmacistLicense, async (req, res) => {
+router.get('/pending-reviews', authenticate, authorize('pharmacist'), async (req, res) => {
   try {
     const { page = 1, limit = 10, priority } = req.query;
 
@@ -222,7 +222,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // @desc    Start prescription review
 // @route   PATCH /api/prescriptions/:id/start-review
 // @access  Private (Pharmacist only)
-router.patch('/:id/start-review', authenticate, authorize('pharmacist'), checkPharmacistLicense, async (req, res) => {
+router.patch('/:id/start-review', authenticate, authorize('pharmacist'), async (req, res) => {
   try {
     const prescription = await Prescription.findById(req.params.id);
 
@@ -262,7 +262,7 @@ router.patch('/:id/start-review', authenticate, authorize('pharmacist'), checkPh
 // @desc    Approve prescription
 // @route   PATCH /api/prescriptions/:id/approve
 // @access  Private (Pharmacist only)
-router.patch('/:id/approve', authenticate, authorize('pharmacist'), checkPharmacistLicense, [
+router.patch('/:id/approve', authenticate, authorize('pharmacist'), [
   body('medicines').isArray().withMessage('Medicines must be an array'),
   body('medicines.*.name').trim().notEmpty().withMessage('Medicine name is required'),
   body('medicines.*.dosage').trim().notEmpty().withMessage('Dosage is required'),
@@ -356,7 +356,7 @@ router.patch('/:id/approve', authenticate, authorize('pharmacist'), checkPharmac
 // @desc    Reject prescription
 // @route   PATCH /api/prescriptions/:id/reject
 // @access  Private (Pharmacist only)
-router.patch('/:id/reject', authenticate, authorize('pharmacist'), checkPharmacistLicense, [
+router.patch('/:id/reject', authenticate, authorize('pharmacist'), [
   body('reason').trim().notEmpty().withMessage('Rejection reason is required'),
   body('notes').optional().isString()
 ], async (req, res) => {

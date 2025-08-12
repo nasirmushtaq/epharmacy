@@ -27,6 +27,9 @@ const storage = multer.diskStorage({
       case 'deliveryProof':
         uploadPath = path.join(__dirname, '../uploads/delivery');
         break;
+      case 'excel':
+        uploadPath = path.join(__dirname, '../uploads/imports');
+        break;
       default:
         uploadPath = path.join(__dirname, '../uploads/misc');
     }
@@ -66,6 +69,18 @@ const fileFilter = (req, file, cb) => {
     } else {
       cb(new Error('Only image files are allowed for delivery proof'), false);
     }
+  } else if (file.fieldname === 'excel') {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+      'application/csv'
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel (.xlsx/.xls) or CSV files are allowed for import'), false);
+    }
   } else {
     cb(new Error('Unexpected field'), false);
   }
@@ -86,6 +101,7 @@ const uploadPrescription = upload.array('prescription', 3); // Max 3 prescriptio
 const uploadProfileImage = upload.single('profileImage');
 const uploadMedicineImages = upload.array('medicineImage', 5); // Max 5 medicine images
 const uploadDeliveryProof = upload.array('deliveryProof', 3); // Max 3 delivery proof images
+const uploadExcel = upload.single('excel');
 
 // Error handling wrapper
 const handleUploadError = (uploadMiddleware) => {
@@ -169,6 +185,7 @@ module.exports = {
   uploadProfileImage: handleUploadError(uploadProfileImage),
   uploadMedicineImages: handleUploadError(uploadMedicineImages),
   uploadDeliveryProof: handleUploadError(uploadDeliveryProof),
+  uploadExcel: handleUploadError(uploadExcel),
   deleteFile,
   getFileUrl,
   cleanupOldFiles

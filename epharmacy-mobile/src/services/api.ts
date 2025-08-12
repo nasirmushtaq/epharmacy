@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 // API configuration
 // Prefer explicit env (EXPO_PUBLIC_API_URL) → then LAN IP for device → fall back to localhost
 const ENV_API = process.env.EXPO_PUBLIC_API_URL;
-const LAN_API = 'http://192.168.0.4:8000'; // auto-detected during setup; change if your LAN IP changes
+const LAN_API = 'http://192.168.0.5:8000'; // auto-detected during setup; change if your LAN IP changes
+const NGROK_API = 'https://d64c6a733747.ngrok-free.app'; // ngrok tunnel for external access
 const LOCAL_API = 'http://localhost:8000';
 
 const API_BASE_URL = __DEV__
@@ -24,7 +25,12 @@ api.interceptors.request.use(
   async (config) => {
     try {
       const token = await AsyncStorage.getItem('token');
-      if (token) config.headers.Authorization = `Bearer ${token}`;
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        console.log(`🔑 API Request: ${config.method?.toUpperCase()} ${config.url} - Token present: ${token.substring(0, 20)}...`);
+      } else {
+        console.log(`🔑 API Request: ${config.method?.toUpperCase()} ${config.url} - No token found`);
+      }
     } catch (error) {
       console.error('Error getting token from AsyncStorage:', error);
     }
