@@ -1,33 +1,39 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // API configuration
-// Prefer explicit env (EXPO_PUBLIC_API_URL) → then LAN IP for device → fall back to localhost
-const ENV_API = process.env.EXPO_PUBLIC_API_URL || (typeof (global as any).expo !== 'undefined' ? undefined : undefined);
-const LAN_API = 'http://192.168.0.5:8000'; // auto-detected during setup; change if your LAN IP changes
-const NGROK_API = 'https://d64c6a733747.ngrok-free.app'; // ngrok tunnel for external access
+// Prefer explicit env (EXPO_PUBLIC_API_URL) → app.json extra.apiBaseUrl (via expo-constants) → last-resort LAN/localhost
+const ENV_API = process.env.EXPO_PUBLIC_API_URL;
+
+// Read from app config at runtime
+const EXTRA: any = (Constants?.expoConfig?.extra || (Constants as any)?.manifest?.extra) || {};
+const EXTRA_API: string | undefined = EXTRA.apiBaseUrl;
+
 const LOCAL_API = 'http://localhost:8000';
 
-// Prefer explicit env; else app.json extra.apiBaseUrl; else LAN/local
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// Compile-time fallback by reading app.json (packaged string)
 let APP_JSON_API: string | undefined;
 try {
-  // @ts-ignore dynamic require for config
-  const appConfig = require('../../../app.json');
-  APP_JSON_API = appConfig?.expo?.extra?.apiBaseUrl as string | undefined;
+  // @ts-ignore
+  const appCfg = require('../../../app.json');
+  APP_JSON_API = appCfg?.expo?.extra?.apiBaseUrl as string | undefined;
 } catch {}
 
-const API_BASE_URL = (ENV_API || APP_JSON_API) || (__DEV__
-  ? (Platform.select({ ios: LAN_API, android: LAN_API, default: LOCAL_API }))
-  : LAN_API);
+// Final base URL resolution
+const API_BASE_URL = (ENV_API || EXTRA_API || APP_JSON_API) || (__DEV__
+  ? (Platform.select({ ios: LOCAL_API, android: LOCAL_API, default: LOCAL_API }))
+  : LOCAL_API);
 
 // Create axios instance
 const api = axios.create({
-  baseURL: ENV_API || API_BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
+
+try { console.log('🌐 API Base URL:', api.defaults.baseURL); } catch {}
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
@@ -61,7 +67,7 @@ api.interceptors.response.use(
 
 // Separate axios instance for auth operations (no auth header required)
 export const authApi = axios.create({
-  baseURL: ENV_API || API_BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
