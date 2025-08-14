@@ -246,11 +246,10 @@ export const AddressProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return state.addresses.find(addr => addr.isDefault) || null;
   };
 
-  // Auto-fetch addresses when component mounts and when user changes
+  // Clear addresses when user changes; fetching will be triggered by screens (e.g., Cart)
   useEffect(() => {
-    // Clear state to avoid showing previous user's addresses
     dispatch({ type: 'SET_ADDRESSES', payload: [] as any });
-    fetchAddresses();
+    dispatch({ type: 'SET_SELECTED_ADDRESS', payload: null });
   }, [authState.user?._id]);
 
   const value: AddressContextType = {

@@ -48,7 +48,7 @@ interface CartItem {
 const CartScreen = () => {
   const { items, updateQuantity, removeItem, clear, subtotal } = useCart();
   const navigation = useNavigation<any>();
-  const { state: addressState, selectAddress } = useAddress();
+  const { state: addressState, selectAddress, fetchAddresses } = useAddress();
   const [couponCode, setCouponCode] = useState('');
   const [lastUploadedPrescriptionId, setLastUploadedPrescriptionId] = useState<string | null>(null);
   const [rxRequiredError, setRxRequiredError] = useState<string | null>(null);
@@ -58,6 +58,10 @@ const CartScreen = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  // Fetch addresses when arriving on Cart screen
+  useEffect(() => {
+    fetchAddresses().catch(() => {});
+  }, []);
 
   // Distance-based delivery fee
   const PHARMACY_LAT = Number(process.env.EXPO_PUBLIC_PHARMACY_LAT || 28.6139);

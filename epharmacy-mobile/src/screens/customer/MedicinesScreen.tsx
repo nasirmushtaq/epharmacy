@@ -106,18 +106,6 @@ const MedicinesScreen = () => {
     }
     await addItem({ medicineId: medicine._id, name: medicine.name, price: medicine.sellingPrice || 0, quantity: 1, isPrescriptionRequired: isRx });
     console.log('Added to cart');
-    if (isRx) {
-      Alert.alert(
-        'Prescription Required',
-        'This item needs a prescription. You can upload it now from the Prescriptions tab.',
-        [
-          { text: 'Later', style: 'cancel' },
-          { text: 'Go to Prescriptions', onPress: () => navigation.navigate('Prescriptions') }
-        ]
-      );
-    } else {
-      Alert.alert('Added to Cart', `${medicine.name} added to cart`);
-    }
   };
 
   if (isLoading) {
