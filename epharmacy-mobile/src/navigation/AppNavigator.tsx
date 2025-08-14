@@ -38,6 +38,7 @@ import { Button } from 'react-native-paper';
 import DoctorOnboardingScreen from '../screens/doctor/DoctorOnboardingScreen';
 import DoctorBookingsScreen from '../screens/doctor/DoctorBookingsScreen';
 import UsersAdminScreen from '../screens/admin/UsersAdminScreen';
+import CatalogAdminScreen from '../screens/admin/CatalogAdminScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -356,6 +357,7 @@ const AdminTabs = () => (
       tabBarIcon: ({ color, size }) => {
         let name: keyof typeof MaterialIcons.glyphMap = 'supervisor-account';
         if (route.name === 'Users') name = 'supervisor-account';
+        else if (route.name === 'Catalog') name = 'inventory';
         else if (route.name === 'TestsAdmin') name = 'biotech';
         else if (route.name === 'Profile') name = 'person';
         return <MaterialIcons name={name} size={size} color={color} />;
@@ -382,6 +384,7 @@ const AdminTabs = () => (
     })}
   >
     <Tab.Screen name="Users" options={{ title: 'User Approvals' }} component={UsersAdminScreen} />
+    <Tab.Screen name="Catalog" options={{ title: 'Catalog' }} component={CatalogAdminScreen} />
     <Tab.Screen name="TestsAdmin" options={{ title: 'Tests' }} component={TestsAdminScreen} />
     <Tab.Screen name="Profile" component={ProfileScreen} />
   </Tab.Navigator>
