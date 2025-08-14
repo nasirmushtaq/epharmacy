@@ -13,7 +13,7 @@ const router = express.Router();
 const https = require('https');
 const { v4: uuidv4 } = require('uuid');
 
-// Function to assign pharmacy based on stock availability and proximity
+// Function to assign pharmacy based on inventory (now used on confirmation, not at placement)
 async function assignPharmacy(order) {
   try {
     if (order.orderType !== 'medicine' || !order.items || order.items.length === 0) {
@@ -270,17 +270,7 @@ router.post('/', authenticate, [
     const order = await Order.create(newOrder);
     await order.populate(getPopulateFields(orderType));
 
-    // Assign pharmacy for medicine orders
-    if (orderType === 'medicine') {
-      const assignedPharmacy = await assignPharmacy(order);
-      if (assignedPharmacy) {
-        order.pharmacy = assignedPharmacy;
-        await order.save();
-        console.log(`[ORDERS] Pharmacy assigned: ${assignedPharmacy}`);
-      } else {
-        console.log(`[ORDERS] No pharmacy assigned - order will be visible to all pharmacists`);
-      }
-    }
+    // Do not auto-assign pharmacy on creation; pharmacists can claim/confirm later
 
     console.log(`[ORDERS] Order created: ${order.orderNumber} (${orderType})`);
     res.status(201).json({ success: true, data: order });
@@ -505,13 +495,38 @@ router.patch('/:id/status', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Update appropriate status field
+    // On medicine confirmation by pharmacist, assign and decrement inventory
     if (orderType === 'doctor_booking') {
       order.doctorBooking.status = status;
     } else if (orderType === 'test_booking') {
       order.testBooking.status = status;
     } else {
       order.status = status;
+      if (status === 'confirmed' && req.user.role === 'pharmacist') {
+        // Assign if not assigned
+        if (!order.pharmacy) {
+          order.pharmacy = req.user._id;
+        }
+        // Decrement pharmacist's inventory for the ordered products
+        try {
+          const Inventory = require('../models/Inventory');
+          for (const it of (order.items || [])) {
+            // Try any batch; prioritize non-expired with stock
+            const inv = await Inventory.findOne({
+              pharmacy: order.pharmacy,
+              product: it.medicine, // productId expected after migration; for now medicine id maps
+              isActive: true,
+              $or: [ { expiryDate: null }, { expiryDate: { $gt: new Date() } } ]
+            }).sort({ expiryDate: 1 });
+            if (inv) {
+              inv.stockQuantity = Math.max(0, (inv.stockQuantity || 0) - (it.quantity || 0));
+              await inv.save();
+            }
+          }
+        } catch (e) {
+          console.error('[ORDERS] Inventory decrement on confirm failed:', e.message);
+        }
+      }
     }
 
     await order.save();
@@ -559,12 +574,20 @@ router.patch('/:id/cancel', authenticate, async (req, res) => {
       });
     }
 
-    // Restore medicine stock
-    for (const item of order.items) {
-      await Medicine.findByIdAndUpdate(
-        item.medicine._id,
-        { $inc: { stockQuantity: item.quantity } }
-      );
+    // Restore inventory if pharmacy already assigned (medicine orders)
+    if (order.orderType === 'medicine' && order.pharmacy) {
+      try {
+        const Inventory = require('../models/Inventory');
+        for (const item of order.items) {
+          const inv = await Inventory.findOne({ pharmacy: order.pharmacy, product: item.medicine });
+          if (inv) {
+            inv.stockQuantity = (inv.stockQuantity || 0) + (item.quantity || 0);
+            await inv.save();
+          }
+        }
+      } catch (e) {
+        console.error('[ORDERS] Inventory restore on cancel failed:', e.message);
+      }
     }
 
     const ok = await order.cancel(reason, req.user._id);

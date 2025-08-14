@@ -50,7 +50,7 @@ const MedicinesScreen = () => {
 
   // Fetch medicines from API with server-side filtering
   const { data: medicinesResponse, isLoading, error, refetch } = useQuery({
-    queryKey: ['medicines', debouncedSearchQuery, selectedCategory],
+    queryKey: ['products', debouncedSearchQuery, selectedCategory],
     queryFn: async () => {
       console.log('🔍 Fetching medicines with search:', debouncedSearchQuery, 'category:', selectedCategory);
       
@@ -71,7 +71,7 @@ const MedicinesScreen = () => {
       params.append('sortOrder', 'asc');
       
       const queryString = params.toString();
-      const url = `/api/medicines${queryString ? `?${queryString}` : ''}`;
+      const url = `/api/products${queryString ? `?${queryString}` : ''}`;
       
       console.log('🔍 API URL:', url);
       const response = await api.get(url);
@@ -98,13 +98,14 @@ const MedicinesScreen = () => {
 
   const addToCart = async (medicine: Medicine) => {
     console.log('AddToCart pressed for', medicine._id, medicine.name, 'stock', medicine.stockQuantity);
-    const isRx = !!medicine.isPrescriptionRequired;
+    const isRx = !!(medicine as any).isPrescriptionRequired;
     if (typeof medicine.stockQuantity === 'number' && medicine.stockQuantity <= 0) {
       console.log('Blocked by out-of-stock');
       Alert.alert('Out of Stock', 'This medicine is currently out of stock');
       return;
     }
-    await addItem({ medicineId: medicine._id, name: medicine.name, price: medicine.sellingPrice || 0, quantity: 1, isPrescriptionRequired: isRx });
+    const price = (medicine as any).sellingPrice || 0;
+    await addItem({ medicineId: (medicine as any)._id, name: (medicine as any).name, price, quantity: 1, isPrescriptionRequired: isRx });
     console.log('Added to cart');
   };
 
@@ -166,9 +167,9 @@ const MedicinesScreen = () => {
           <View style={styles.stockInfo}>
             <Text style={[
               styles.stockText,
-              { color: item.stockQuantity > 0 ? '#4CAF50' : '#F44336' }
+              { color: (item as any).isAvailable === false ? '#F44336' : '#4CAF50' }
             ]}>
-              {item.stockQuantity > 0 ? `${item.stockQuantity} in stock` : 'Out of stock'}
+              {(item as any).isAvailable === false ? 'Out of stock' : 'In stock'}
             </Text>
           </View>
         </View>
@@ -187,7 +188,7 @@ const MedicinesScreen = () => {
           <Button
             mode="contained"
             onPress={() => addToCart(item)}
-            disabled={(typeof item.stockQuantity === 'number' && item.stockQuantity <= 0) || getQuantityInCart(item._id) >= (item.stockQuantity ?? Number.MAX_SAFE_INTEGER)}
+            disabled={(item as any).isAvailable === false}
             style={styles.addButton}
             compact
           >

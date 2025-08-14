@@ -15,7 +15,7 @@ export default function MedicineDetailScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get(`/api/medicines/${id}`);
+        const res = await api.get(`/api/products/${id}`);
         setMed(res.data.data || res.data);
       } catch (e) {
       } finally {
@@ -53,8 +53,8 @@ export default function MedicineDetailScreen() {
       <Text style={styles.sectionTitle}>Pricing</Text>
       <Text>MRP: ₹{med.mrp}   Selling: ₹{med.sellingPrice}</Text>
       <Divider style={{ marginVertical: 12 }} />
-      <Text style={styles.sectionTitle}>Stock</Text>
-      <Text>{med.stockQuantity > 0 ? `${med.stockQuantity} available` : 'Out of stock'}</Text>
+      <Text style={styles.sectionTitle}>Availability</Text>
+      <Text>{(med as any).isAvailable === false ? 'Out of stock' : 'In stock'}</Text>
       <Divider style={{ marginVertical: 12 }} />
       <Text style={styles.sectionTitle}>Side Effects</Text>
       <Text style={styles.paragraph}>{(med.sideEffects || []).join(', ') || 'Not available'}</Text>

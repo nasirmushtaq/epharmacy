@@ -13,6 +13,8 @@ const User = require('./models/User');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const medicineRoutes = require('./routes/medicines');
+const productRoutes = require('./routes/products');
+const inventoryRoutes = require('./routes/inventory');
 const prescriptionRoutes = require('./routes/prescriptions');
 const orderRoutes = require('./routes/orders');
 const deliveryRoutes = require('./routes/deliveries');
@@ -168,6 +170,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/medicines', medicineRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/deliveries', deliveryRoutes);
