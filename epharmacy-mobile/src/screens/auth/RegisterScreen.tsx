@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Pressable } from 'react-native';
 import { Text, TextInput, Button, HelperText, Menu, Avatar } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
 import DatePickerField from '../../components/DatePickerField';
@@ -137,16 +137,18 @@ const RegisterScreen = ({ navigation }: any) => {
         visible={roleMenuVisible}
         onDismiss={() => setRoleMenuVisible(false)}
         anchor={
-          <TextInput
-            label="Select Role"
-            value={
-              role === 'customer' ? 'Customer' : role === 'pharmacist' ? 'Pharmacist' : role === 'doctor' ? 'Doctor' : 'Delivery Agent'
-            }
-            mode="outlined"
-            right={<TextInput.Icon icon="menu-down" onPress={() => setRoleMenuVisible(true)} />}
-            editable={false}
-            style={styles.input}
-          />
+          <Pressable onPress={() => setRoleMenuVisible(true)}>
+            <TextInput
+              label="Select Role"
+              value={
+                role === 'customer' ? 'Customer' : role === 'pharmacist' ? 'Pharmacist' : role === 'doctor' ? 'Doctor' : 'Delivery Agent'
+              }
+              mode="outlined"
+              right={<TextInput.Icon icon="menu-down" />}
+              editable={false}
+              style={styles.input}
+            />
+          </Pressable>
         }
       >
         <Menu.Item onPress={() => { setRole('customer'); setRoleMenuVisible(false); }} title="Customer" />

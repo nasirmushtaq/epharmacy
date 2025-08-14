@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, FlatList, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, FlatList, StyleSheet, Alert, ScrollView, Pressable } from 'react-native';
 import { Card, Text, Button, IconButton, Surface, Divider, TextInput, Chip, FAB, Searchbar, ActivityIndicator, Modal, Portal, Menu } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
@@ -297,7 +297,11 @@ const InventoryScreen = () => {
               <Menu
                 visible={categoryMenuVisible}
                 onDismiss={() => setCategoryMenuVisible(false)}
-                anchor={<Button mode="outlined" onPress={() => setCategoryMenuVisible(true)}>{newMedicine.category || 'Select category'}</Button>}
+                anchor={
+                  <Pressable onPress={() => setCategoryMenuVisible(true)}>
+                    <Button mode="outlined">{newMedicine.category || 'Select category'}</Button>
+                  </Pressable>
+                }
               >
                 {categories.map((cat) => (
                   <Menu.Item key={cat} onPress={() => { setNewMedicine({ ...newMedicine, category: cat }); setCategoryMenuVisible(false); }} title={cat} />
@@ -321,7 +325,11 @@ const InventoryScreen = () => {
               <Menu
                 visible={dosageMenuVisible}
                 onDismiss={() => setDosageMenuVisible(false)}
-                anchor={<Button mode="outlined" onPress={() => setDosageMenuVisible(true)}>{newMedicine.dosageForm || 'Select dosage form'}</Button>}
+                anchor={
+                  <Pressable onPress={() => setDosageMenuVisible(true)}>
+                    <Button mode="outlined">{newMedicine.dosageForm || 'Select dosage form'}</Button>
+                  </Pressable>
+                }
               >
                 {dosageForms.map((df) => (
                   <Menu.Item key={df} onPress={() => { setNewMedicine({ ...newMedicine, dosageForm: df }); setDosageMenuVisible(false); }} title={df} />
@@ -447,7 +455,11 @@ const InventoryScreen = () => {
               <Menu
                 visible={scheduleMenuVisible}
                 onDismiss={() => setScheduleMenuVisible(false)}
-                anchor={<Button mode="outlined" onPress={() => setScheduleMenuVisible(true)}>{newMedicine.scheduleType || 'Select schedule'}</Button>}
+                anchor={
+                  <Pressable onPress={() => setScheduleMenuVisible(true)}>
+                    <Button mode="outlined">{newMedicine.scheduleType || 'Select schedule'}</Button>
+                  </Pressable>
+                }
               >
                 {schedules.map((sc) => (
                   <Menu.Item key={sc} onPress={() => { setNewMedicine({ ...newMedicine, scheduleType: sc }); setScheduleMenuVisible(false); }} title={sc} />

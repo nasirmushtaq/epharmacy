@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, FlatList } from 'react-native';
+import { View, StyleSheet, FlatList, Pressable } from 'react-native';
 import { Text, Card, TextInput, Button, Chip, Divider, Snackbar, Menu } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
@@ -61,14 +61,16 @@ const CustomerBookingsScreen = () => {
             visible={statusMenuVisible}
             onDismiss={() => setStatusMenuVisible(false)}
             anchor={
-              <TextInput
-                mode="outlined"
-                label="Status"
-                value={selectedStatus ? (selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)) : 'All'}
-                editable={false}
-                right={<TextInput.Icon icon="menu-down" onPress={() => setStatusMenuVisible(true)} />}
-                style={styles.statusInput}
-              />
+              <Pressable onPress={() => setStatusMenuVisible(true)}>
+                <TextInput
+                  mode="outlined"
+                  label="Status"
+                  value={selectedStatus ? (selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)) : 'All'}
+                  editable={false}
+                  right={<TextInput.Icon icon="menu-down" />}
+                  style={styles.statusInput}
+                />
+              </Pressable>
             }
           >
             {['all', 'pending', 'confirmed', 'completed', 'cancelled'].map((s) => (
