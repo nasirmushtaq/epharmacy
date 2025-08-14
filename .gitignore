@@ -15,6 +15,9 @@ yarn-error.log*
 backend/uploads/
 backend/logs/
 backend/.env
+backend/nohup.out
+backend/server.out
+nohup.out
 
 # Frontend specific
 frontend/build/
@@ -26,6 +29,11 @@ epharmacy-mobile/.expo/
 epharmacy-mobile/dist/
 epharmacy-mobile/web-build/
 epharmacy-mobile/.env
+epharmacy-mobile/*.apk
+epharmacy-mobile/**/*.apk
+epharmacy-mobile/android/local.properties
+epharmacy-mobile/android/.gradle/
+epharmacy-mobile/android/.cxx/
 
 # React Native
 epharmacy-mobile/android/app/build/

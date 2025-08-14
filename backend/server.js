@@ -52,12 +52,12 @@ async function ensureBootstrapAdmin() {
 
     const firstName = process.env.ADMIN_FIRST || 'Admin';
     const lastName = process.env.ADMIN_LAST || 'User';
-    const phone = process.env.ADMIN_PHONE || '+911234567890';
+    const phone = process.env.ADMIN_PHONE || '+917006861539';
     const address = {
-      street: process.env.ADMIN_STREET || '1 Admin Way',
-      city: process.env.ADMIN_CITY || 'Mumbai',
-      state: process.env.ADMIN_STATE || 'MH',
-      zipCode: process.env.ADMIN_ZIP || '400001',
+      street: process.env.ADMIN_STREET || 'Bomai',
+      city: process.env.ADMIN_CITY || 'Srinagar',
+      state: process.env.ADMIN_STATE || 'JK',
+      zipCode: process.env.ADMIN_ZIP || '193201',
       country: process.env.ADMIN_COUNTRY || 'India'
     };
 
