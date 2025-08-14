@@ -91,21 +91,21 @@ const MedicinesScreen = () => {
   const { addItem, items } = useCart();
 
   // remove local cartItems state usage and compute quantity from cart context
-  const getQuantityInCart = (medicineId: string) => {
-    const line = items.find(i => i.medicineId === medicineId);
+  const getQuantityInCart = (productId: string) => {
+    const line = items.find(i => i.medicineId === productId);
     return line ? line.quantity : 0;
   };
 
-  const addToCart = async (medicine: Medicine) => {
-    console.log('AddToCart pressed for', medicine._id, medicine.name, 'stock', medicine.stockQuantity);
-    const isRx = !!(medicine as any).isPrescriptionRequired;
-    if (typeof medicine.stockQuantity === 'number' && medicine.stockQuantity <= 0) {
+  const addToCart = async (product: any) => {
+    console.log('AddToCart pressed for', product._id, product.name, 'available', (product as any).isAvailable);
+    const isRx = !!(product as any).isPrescriptionRequired;
+    if ((product as any).isAvailable === false) {
       console.log('Blocked by out-of-stock');
       Alert.alert('Out of Stock', 'This medicine is currently out of stock');
       return;
     }
-    const price = (medicine as any).sellingPrice || 0;
-    await addItem({ medicineId: (medicine as any)._id, name: (medicine as any).name, price, quantity: 1, isPrescriptionRequired: isRx });
+    const price = (product as any).sellingPrice || 0;
+    await addItem({ medicineId: (product as any)._id, name: (product as any).name, price, quantity: 1, isPrescriptionRequired: isRx });
     console.log('Added to cart');
   };
 

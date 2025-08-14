@@ -21,6 +21,11 @@ const orderSchema = new mongoose.Schema({
   
   // Medicine order items
   items: [{
+    // New catalog-based reference (preferred)
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product'
+    },
     medicine: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Medicine'

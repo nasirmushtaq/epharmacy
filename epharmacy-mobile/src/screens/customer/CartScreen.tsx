@@ -417,7 +417,7 @@ const CartScreen = () => {
       const orderData = {
         orderType: 'medicine',
         items: items.map(item => ({
-          medicine: item.medicineId,
+          product: item.medicineId,
           quantity: item.quantity,
           price: item.price,
           total: item.price * item.quantity

@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Order = require('../models/Order');
 const Medicine = require('../models/Medicine');
+const Product = require('../models/Product');
 const Prescription = require('../models/Prescription');
 const Doctor = require('../models/Doctor');
 const Test = require('../models/Test');
@@ -218,13 +219,23 @@ router.post('/', authenticate, [
       if (!orderData.deliveryAddress || !orderData.deliveryAddress.street) {
         return res.status(400).json({ success: false, message: 'Medicine orders must have delivery address' });
       }
-      
-      // Validate medicines exist
-      const medicineIds = orderData.items.map(item => item.medicine);
-      const medicines = await Medicine.find({ _id: { $in: medicineIds } });
-      if (medicines.length !== medicineIds.length) {
-        return res.status(400).json({ success: false, message: 'Some medicines not found' });
+
+      // Accept either catalog product or legacy medicine, normalize and validate
+      const normalizedItems = [];
+      for (const it of orderData.items) {
+        if (it.product) {
+          const p = await Product.findById(it.product);
+          if (!p) return res.status(400).json({ success: false, message: 'Some products not found' });
+          normalizedItems.push({ product: p._id, quantity: it.quantity, price: it.price, total: it.total });
+        } else if (it.medicine) {
+          const m = await Medicine.findById(it.medicine);
+          if (!m) return res.status(400).json({ success: false, message: 'Some medicines not found' });
+          normalizedItems.push({ medicine: m._id, quantity: it.quantity, price: it.price, total: it.total });
+        } else {
+          return res.status(400).json({ success: false, message: 'Each item must include product' });
+        }
       }
+      newOrder.items = normalizedItems;
       
       // Validate prescription if required
       if (orderData.prescription) {
@@ -371,6 +382,7 @@ router.get('/my-orders', authenticate, async (req, res) => {
     const orders = await Order.find(filter)
       .populate('customer', 'firstName lastName email')
       .populate('items.medicine')
+      .populate('items.product')
       .populate('prescription')
       .populate('doctorBooking.doctor')
       .populate('testBooking.test')
@@ -392,6 +404,7 @@ router.get('/:id', authenticate, async (req, res) => {
     const order = await Order.findById(req.params.id)
       .populate('customer', 'firstName lastName email')
       .populate('items.medicine')
+      .populate('items.product')
       .populate('prescription')
       .populate('doctorBooking.doctor')
       .populate('testBooking.test');
@@ -514,7 +527,7 @@ router.patch('/:id/status', authenticate, async (req, res) => {
             // Try any batch; prioritize non-expired with stock
             const inv = await Inventory.findOne({
               pharmacy: order.pharmacy,
-              product: it.medicine, // productId expected after migration; for now medicine id maps
+              product: it.product || it.medicine, // prefer product id, fallback legacy medicine id
               isActive: true,
               $or: [ { expiryDate: null }, { expiryDate: { $gt: new Date() } } ]
             }).sort({ expiryDate: 1 });
@@ -579,7 +592,7 @@ router.patch('/:id/cancel', authenticate, async (req, res) => {
       try {
         const Inventory = require('../models/Inventory');
         for (const item of order.items) {
-          const inv = await Inventory.findOne({ pharmacy: order.pharmacy, product: item.medicine });
+          const inv = await Inventory.findOne({ pharmacy: order.pharmacy, product: item.product || item.medicine });
           if (inv) {
             inv.stockQuantity = (inv.stockQuantity || 0) + (item.quantity || 0);
             await inv.save();
@@ -875,7 +888,7 @@ function getPopulateFields(orderType) {
   
   switch (orderType) {
     case 'medicine':
-      return [...baseFields, 'items.medicine', 'prescription', 'pharmacy'];
+      return [...baseFields, 'items.medicine', 'items.product', 'prescription', 'pharmacy'];
     case 'doctor_booking':
       return [...baseFields, 'doctorBooking.doctor'];
     case 'test_booking':
