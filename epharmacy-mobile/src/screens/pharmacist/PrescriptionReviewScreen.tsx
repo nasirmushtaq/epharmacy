@@ -82,6 +82,26 @@ const PrescriptionReviewScreen = () => {
     return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text>Error loading</Text><Button onPress={() => refetch()}>Retry</Button></View>;
   }
 
+  const getAbsoluteUrl = (url: string) => {
+    try {
+      const base = (api.defaults.baseURL || '').replace(/\/$/, '');
+      if (!url) return base;
+      if (/^https?:\/\//i.test(url)) {
+        const u = new URL(url);
+        const baseUrl = new URL(base);
+        if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+          u.protocol = baseUrl.protocol;
+          u.host = baseUrl.host;
+          return u.toString();
+        }
+        return url;
+      }
+      return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+    } catch {
+      return url;
+    }
+  };
+
   const renderPrescriptionImage = (document: { url: string; originalName?: string }, index: number) => (
     <TouchableOpacity
       key={index}
@@ -89,7 +109,7 @@ const PrescriptionReviewScreen = () => {
       style={styles.imageContainer}
     >
       <Image
-        source={{ uri: document.url }}
+        source={{ uri: getAbsoluteUrl(document.url) }}
         style={styles.prescriptionImage}
         resizeMode="cover"
       />
@@ -101,9 +121,7 @@ const PrescriptionReviewScreen = () => {
 
   const openDocument = (url: string) => {
     console.log('Opening document:', url);
-    
-    // Ensure URL is absolute
-    const absoluteUrl = url.startsWith('http') ? url : `${api.defaults.baseURL}${url}`;
+    const absoluteUrl = getAbsoluteUrl(url);
     console.log('Absolute URL:', absoluteUrl);
     
     if (url.match(/\.(pdf|doc|docx)$/i)) {
@@ -160,7 +178,7 @@ const PrescriptionReviewScreen = () => {
                 >
                   {document.url.match(/\.(jpg|jpeg|png|gif|bmp)$/i) ? (
                     <Image
-                      source={{ uri: document.url.startsWith('http') ? document.url : `${api.defaults.baseURL}${document.url}` }}
+                      source={{ uri: getAbsoluteUrl(document.url) }}
                       style={styles.documentImage}
                       resizeMode="cover"
                       onError={(error) => {

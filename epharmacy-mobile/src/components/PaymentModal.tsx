@@ -71,12 +71,18 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const [reloadKey, setReloadKey] = useState(0);
   const retriedRef = useRef(false);
+  const startedRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [authHeaders, setAuthHeaders] = useState<Record<string, string>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     // Try to use native Cashfree SDK if available on native platforms
     if (visible && mode === 'cashfree' && PGSDK && sessionId && Platform.OS !== 'web') {
+      if (startedRef.current) {
+        return;
+      }
+      startedRef.current = true;
       console.log('🎯 PaymentModal: Attempting native Cashfree SDK payment...');
       console.log('📱 Platform:', Platform.OS);
       console.log('🔑 SessionId:', sessionId);
@@ -110,6 +116,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           CFPaymentGatewayService.setCallback({
             onVerify: (verifiedOrderId: string) => {
               console.log('✅ Payment SDK Verify:', verifiedOrderId);
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+              startedRef.current = false;
               onSuccess && onSuccess({ orderId: verifiedOrderId || (orderId || ''), paymentId: '', signature: '' });
               onClose && onClose();
             },
@@ -121,12 +129,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               } catch (e: any) {
                 onFailure && onFailure(e?.message || 'Payment failed');
               } finally {
+                if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+                startedRef.current = false;
                 onClose && onClose();
               }
             }
           });
 
-          const timeoutId = setTimeout(() => {
+          timeoutRef.current = setTimeout(() => {
             console.log('⏰ Native SDK timeout - attempting CF WebCheckout via SDK...');
             try {
               CFPaymentGatewayService.doWebPayment(sessionObj);
@@ -151,8 +161,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             try {
               console.log('🔁 Trying CF Drop Checkout as secondary...');
               CFPaymentGatewayService.doPayment(dropPayment);
-            } catch (e2) {
-              clearTimeout(timeoutId);
+             } catch (e2) {
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
               console.log('🔄 CF Drop Checkout failed, will use in-app WebView');
             }
           }
@@ -177,17 +187,21 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
           PGSDK.setCallback({
             onVerify: (verifiedOrderId: string) => {
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+              startedRef.current = false;
               onSuccess && onSuccess({ orderId: verifiedOrderId || payload.session.orderID || '', paymentId: '', signature: '' });
               onClose && onClose();
             },
             onError: (error: any, errOrderId?: string) => {
               const message = (error && (error.message || error.getMessage?.())) || 'Payment failed';
               onFailure && onFailure(message);
+              if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+              startedRef.current = false;
               onClose && onClose();
             }
           });
 
-          const timeoutId = setTimeout(() => {
+          timeoutRef.current = setTimeout(() => {
             console.log('⏰ Native SDK timeout - attempting PGSDK.doWebPayment fallback...');
             try {
               PGSDK.doWebPayment(JSON.stringify({ session: payload.session }));
@@ -218,6 +232,22 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         console.log('   npx expo run:ios (for iOS)');
       }
     }
+
+    return () => {
+      // Cleanup on unmount/visibility change
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      try {
+        const CFModule = Platform.OS !== 'web' ? require('react-native-cashfree-pg-sdk') : null;
+        const svc = CFModule?.CFPaymentGatewayService || PGSDK;
+        if (svc?.removeCallback) {
+          svc.removeCallback();
+        }
+      } catch {}
+      startedRef.current = false;
+    };
   }, [visible, mode, sessionId, env, orderId, appId]);
 
   useEffect(() => {

@@ -47,6 +47,7 @@ interface CartItem {
 
 const CartScreen = () => {
   const { items, updateQuantity, removeItem, clear, subtotal } = useCart();
+  const navigation = useNavigation<any>();
   const { state: addressState, selectAddress } = useAddress();
   const [couponCode, setCouponCode] = useState('');
   const [lastUploadedPrescriptionId, setLastUploadedPrescriptionId] = useState<string | null>(null);
@@ -495,11 +496,15 @@ const CartScreen = () => {
       
       // Navigate to Orders tab (nested inside CustomerTabs)
       setTimeout(() => {
-        const globalNav = (global as any)?.navigation;
-        if (globalNav && globalNav.navigate) {
-          globalNav.navigate('CustomerTabs', { screen: 'Orders' });
+        try {
+          navigation.navigate('CustomerTabs', { screen: 'Orders' });
+        } catch {
+          const globalNav = (global as any)?.navigation;
+          if (globalNav && globalNav.navigate) {
+            globalNav.navigate('CustomerTabs', { screen: 'Orders' });
+          }
         }
-      }, 1000);
+      }, 800);
       
     } catch (error: any) {
       setPaymentVisible(false);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, FlatList, StyleSheet, Alert, ScrollView } from 'react-native';
-import { Card, Text, Button, IconButton, Surface, Divider, TextInput, Chip, FAB, Searchbar, ActivityIndicator, Modal, Portal } from 'react-native-paper';
+import { Card, Text, Button, IconButton, Surface, Divider, TextInput, Chip, FAB, Searchbar, ActivityIndicator, Modal, Portal, Menu } from 'react-native-paper';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 
@@ -29,14 +29,25 @@ const InventoryScreen = () => {
     manufacturer: '',
     description: '',
     category: 'tablets',
+    dosageForm: 'tablet',
+    strength: '',
+    packSize: '',
     sellingPrice: '',
     mrp: '',
     stockQuantity: '',
     minStockLevel: '',
+    manufacturingDate: '',
     expiryDate: '',
+    unit: 'strips',
+    usageInstructions: '',
+    storageInstructions: '',
     batchNumber: '',
+    scheduleType: 'OTC',
     isPrescriptionRequired: false
   });
+  const [categoryMenuVisible, setCategoryMenuVisible] = useState(false);
+  const [dosageMenuVisible, setDosageMenuVisible] = useState(false);
+  const [scheduleMenuVisible, setScheduleMenuVisible] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: inventory = [], isLoading, error, refetch } = useQuery({
@@ -74,7 +85,15 @@ const InventoryScreen = () => {
         mrp: parseFloat(medicineData.mrp),
         stockQuantity: parseInt(medicineData.stockQuantity),
         minStockLevel: parseInt(medicineData.minStockLevel),
-        expiryDate: new Date(medicineData.expiryDate).toISOString()
+        packSize: parseInt(medicineData.packSize),
+        manufacturingDate: new Date(medicineData.manufacturingDate).toISOString(),
+        expiryDate: new Date(medicineData.expiryDate).toISOString(),
+        dosageForm: medicineData.dosageForm,
+        strength: medicineData.strength,
+        scheduleType: medicineData.scheduleType,
+        unit: medicineData.unit,
+        usageInstructions: medicineData.usageInstructions,
+        storageInstructions: medicineData.storageInstructions
       };
       return api.post('/api/medicines', formData);
     },
@@ -97,12 +116,20 @@ const InventoryScreen = () => {
       manufacturer: '',
       description: '',
       category: 'tablets',
+      dosageForm: 'tablet',
+      strength: '',
+      packSize: '',
       sellingPrice: '',
       mrp: '',
       stockQuantity: '',
       minStockLevel: '',
+      manufacturingDate: '',
       expiryDate: '',
+      unit: 'strips',
+      usageInstructions: '',
+      storageInstructions: '',
       batchNumber: '',
+      scheduleType: 'OTC',
       isPrescriptionRequired: false
     });
   };
@@ -196,6 +223,8 @@ const InventoryScreen = () => {
   );
 
   const categories = ['tablets', 'capsules', 'syrups', 'injections', 'ointments', 'drops', 'inhalers', 'supplements', 'antibiotics', 'painkillers'];
+  const dosageForms = ['tablet', 'capsule', 'syrup', 'injection', 'ointment', 'drop', 'inhaler'];
+  const schedules = ['OTC', 'H', 'H1', 'X'];
 
   return (
     <View style={{ flex: 1 }}>
@@ -265,18 +294,15 @@ const InventoryScreen = () => {
 
             <View style={{ marginBottom: 12 }}>
               <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Category *</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                {categories.map(cat => (
-                  <Chip
-                    key={cat}
-                    selected={newMedicine.category === cat}
-                    onPress={() => setNewMedicine({ ...newMedicine, category: cat })}
-                    style={{ marginRight: 8, marginBottom: 8 }}
-                  >
-                    {cat}
-                  </Chip>
+              <Menu
+                visible={categoryMenuVisible}
+                onDismiss={() => setCategoryMenuVisible(false)}
+                anchor={<Button mode="outlined" onPress={() => setCategoryMenuVisible(true)}>{newMedicine.category || 'Select category'}</Button>}
+              >
+                {categories.map((cat) => (
+                  <Menu.Item key={cat} onPress={() => { setNewMedicine({ ...newMedicine, category: cat }); setCategoryMenuVisible(false); }} title={cat} />
                 ))}
-              </View>
+              </Menu>
             </View>
             
             <TextInput
@@ -288,6 +314,39 @@ const InventoryScreen = () => {
               numberOfLines={3}
               style={{ marginBottom: 12 }}
             />
+
+            {/* Dosage Form */}
+            <View style={{ marginBottom: 12 }}>
+              <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Dosage Form *</Text>
+              <Menu
+                visible={dosageMenuVisible}
+                onDismiss={() => setDosageMenuVisible(false)}
+                anchor={<Button mode="outlined" onPress={() => setDosageMenuVisible(true)}>{newMedicine.dosageForm || 'Select dosage form'}</Button>}
+              >
+                {dosageForms.map((df) => (
+                  <Menu.Item key={df} onPress={() => { setNewMedicine({ ...newMedicine, dosageForm: df }); setDosageMenuVisible(false); }} title={df} />
+                ))}
+              </Menu>
+            </View>
+
+            {/* Strength and Pack Size */}
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <TextInput
+                mode="outlined"
+                label="Strength (e.g., 500mg) *"
+                value={newMedicine.strength}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, strength: text })}
+                style={{ flex: 1 }}
+              />
+              <TextInput
+                mode="outlined"
+                label="Pack Size *"
+                value={newMedicine.packSize}
+                onChangeText={(text) => setNewMedicine({ ...newMedicine, packSize: text })}
+                keyboardType="numeric"
+                style={{ flex: 1 }}
+              />
+            </View>
             
             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
               <TextInput
@@ -337,12 +396,64 @@ const InventoryScreen = () => {
             
             <TextInput
               mode="outlined"
+              label="Manufacturing Date (YYYY-MM-DD) *"
+              value={newMedicine.manufacturingDate}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, manufacturingDate: text })}
+              placeholder="2025-01-01"
+              style={{ marginBottom: 12 }}
+            />
+
+            <TextInput
+              mode="outlined"
               label="Expiry Date (YYYY-MM-DD) *"
               value={newMedicine.expiryDate}
               onChangeText={(text) => setNewMedicine({ ...newMedicine, expiryDate: text })}
               placeholder="2025-12-31"
               style={{ marginBottom: 12 }}
             />
+
+            {/* Unit */}
+            <TextInput
+              mode="outlined"
+              label="Unit (e.g., strips, bottles) *"
+              value={newMedicine.unit}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, unit: text })}
+              style={{ marginBottom: 12 }}
+            />
+
+            {/* Usage & Storage Instructions */}
+            <TextInput
+              mode="outlined"
+              label="Usage Instructions *"
+              value={newMedicine.usageInstructions}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, usageInstructions: text })}
+              multiline
+              numberOfLines={2}
+              style={{ marginBottom: 12 }}
+            />
+            <TextInput
+              mode="outlined"
+              label="Storage Instructions *"
+              value={newMedicine.storageInstructions}
+              onChangeText={(text) => setNewMedicine({ ...newMedicine, storageInstructions: text })}
+              multiline
+              numberOfLines={2}
+              style={{ marginBottom: 12 }}
+            />
+
+            {/* Schedule Type */}
+            <View style={{ marginBottom: 20 }}>
+              <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Schedule Type *</Text>
+              <Menu
+                visible={scheduleMenuVisible}
+                onDismiss={() => setScheduleMenuVisible(false)}
+                anchor={<Button mode="outlined" onPress={() => setScheduleMenuVisible(true)}>{newMedicine.scheduleType || 'Select schedule'}</Button>}
+              >
+                {schedules.map((sc) => (
+                  <Menu.Item key={sc} onPress={() => { setNewMedicine({ ...newMedicine, scheduleType: sc }); setScheduleMenuVisible(false); }} title={sc} />
+                ))}
+              </Menu>
+            </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
               <Chip
@@ -366,7 +477,7 @@ const InventoryScreen = () => {
                 mode="contained"
                 onPress={() => addMedicineMutation.mutate(newMedicine)}
                 loading={addMedicineMutation.isPending}
-                disabled={!newMedicine.name || !newMedicine.genericName || !newMedicine.brand}
+                disabled={!newMedicine.name || !newMedicine.genericName || !newMedicine.brand || !newMedicine.manufacturer || !newMedicine.description || !newMedicine.strength || !newMedicine.packSize || !newMedicine.batchNumber || !newMedicine.manufacturingDate || !newMedicine.expiryDate || !newMedicine.mrp || !newMedicine.sellingPrice || !newMedicine.stockQuantity || !newMedicine.minStockLevel || !newMedicine.unit || !newMedicine.usageInstructions || !newMedicine.storageInstructions}
                 style={{ flex: 1 }}
               >
                 Add Medicine
