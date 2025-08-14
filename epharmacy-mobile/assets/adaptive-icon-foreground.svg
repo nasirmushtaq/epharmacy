@@ -1,0 +1,15 @@
+<svg width="108" height="108" viewBox="0 0 108 108" xmlns="http://www.w3.org/2000/svg">
+  <!-- Key graphic only, no background, centered within safe area -->
+  <g transform="translate(18,18)">
+    <!-- Cross -->
+    <rect x="30" y="0" width="12" height="60" rx="4" fill="#FFFFFF"/>
+    <rect x="0" y="24" width="60" height="12" rx="4" fill="#FFFFFF"/>
+    <!-- Capsule -->
+    <g transform="translate(6,8) rotate(-25 24 24)">
+      <rect x="9" y="18" width="48" height="18" rx="9" fill="#FFFFFF" opacity="0.95"/>
+      <rect x="9" y="18" width="24" height="18" rx="9" fill="#2196F3"/>
+    </g>
+  </g>
+</svg>
+
+
