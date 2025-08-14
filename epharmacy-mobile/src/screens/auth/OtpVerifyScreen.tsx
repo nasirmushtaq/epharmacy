@@ -27,12 +27,25 @@ export default function OtpVerifyScreen({ route, navigation }: any) {
     }
   };
 
+  const cancel = () => {
+    try {
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Login');
+      }
+    } catch {
+      navigation.navigate('Login');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Verify OTP</Text>
       <Text style={{ marginBottom: 12 }}>{email || phone}</Text>
       <TextInput label="OTP Code" value={code} onChangeText={setCode} mode="outlined" keyboardType='number-pad' style={{ marginBottom: 12 }} />
       <Button mode="contained" onPress={submit} loading={loading}>Verify</Button>
+      <Button mode="text" onPress={cancel} style={{ marginTop: 8 }}>Cancel</Button>
       {msg ? <Text style={{ marginTop: 10, color: msg.includes('Failed')? '#F44336':'#4CAF50' }}>{msg}</Text> : null}
     </View>
   );
