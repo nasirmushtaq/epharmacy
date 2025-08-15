@@ -45,9 +45,14 @@ interface CartItem {
   image?: string;
 }
 
-const CartScreen = () => {
+interface CartScreenProps {
+  navigation?: NavigationProp<any>;
+}
+
+const CartScreen: React.FC<CartScreenProps> = ({ navigation: propNavigation }) => {
   const { items, updateQuantity, removeItem, clear, subtotal } = useCart();
-  const navigation = useNavigation<any>();
+  const hookNavigation = useNavigation<NavigationProp<any>>();
+  const navigation = propNavigation || hookNavigation;
   const { state: addressState, selectAddress, fetchAddresses } = useAddress();
   const [couponCode, setCouponCode] = useState('');
   const [lastUploadedPrescriptionId, setLastUploadedPrescriptionId] = useState<string | null>(null);

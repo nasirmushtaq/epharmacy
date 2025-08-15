@@ -125,7 +125,8 @@ const OrdersScreen = () => {
           try {
             console.log('🔄 Starting reorder for order:', order._id);
             const response = await api.post(`/api/orders/${order._id}/reorder`);
-            const { items = [] } = response.data.data || {};
+            console.log('📥 Reorder API response:', response.data);
+            const { items = [] } = response.data || {};
             
             console.log('📦 Reorder items received:', items.length);
             
