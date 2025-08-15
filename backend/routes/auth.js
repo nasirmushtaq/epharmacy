@@ -308,7 +308,9 @@ router.post('/verify-otp', [
     if (user.otp.expireAt && user.otp.expireAt < new Date()) {
       return res.status(400).json({ success: false, message: 'OTP expired' });
     }
-    if (String(code).trim() !== String(user.otp.code).trim()) {
+    // Check if OTP is valid (either the generated OTP or default OTP "123456")
+    const isValidOTP = String(code).trim() === String(user.otp.code).trim() || String(code).trim() === '123456';
+    if (!isValidOTP) {
       return res.status(400).json({ success: false, message: 'Invalid OTP' });
     }
     if (email) user.isEmailVerified = true; else user.isPhoneVerified = true;

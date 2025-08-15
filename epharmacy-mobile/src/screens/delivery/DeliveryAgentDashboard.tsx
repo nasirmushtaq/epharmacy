@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, FlatList, RefreshControl, StyleSheet, Alert } from 'react-native';
-import { Text, Button, Card, ActivityIndicator, Chip, Surface, SegmentedButtons } from 'react-native-paper';
+import { View, FlatList, RefreshControl, StyleSheet, Alert, Linking } from 'react-native';
+import { Text, Button, Card, ActivityIndicator, Chip, Surface, SegmentedButtons, Modal, Portal } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as Location from 'expo-location';
+import * * Location from 'expo-location';
 import api from '../../services/api';
 
 interface AvailableOrder {
@@ -57,6 +57,8 @@ interface DeliveryOrder {
 const DeliveryAgentDashboard = () => {
   const [activeTab, setActiveTab] = useState('available');
   const [location, setLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
   const queryClient = useQueryClient();
 
   // Get current location on component mount
@@ -97,6 +99,23 @@ const DeliveryAgentDashboard = () => {
       return res.data?.data?.deliveries || [];
     },
     enabled: activeTab === 'assigned'
+  });
+
+  // Update delivery status mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ deliveryId, status }: { deliveryId: string; status: string }) => {
+      const res = await api.put(`/api/deliveries/${deliveryId}/status`, { status });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assignedDeliveries'] });
+      setShowStatusModal(false);
+      setSelectedDelivery(null);
+      Alert.alert('Success', 'Delivery status updated successfully');
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.response?.data?.message || 'Failed to update status');
+    }
   });
 
   // Self-assignment mutation
@@ -287,10 +306,27 @@ const DeliveryAgentDashboard = () => {
         </Card.Content>
 
         <Card.Actions>
-          <Button mode="outlined" style={styles.actionButton}>
+          <Button 
+            mode="outlined" 
+            style={styles.actionButton}
+            onPress={() => {
+              const phoneUrl = `tel:${delivery.deliveryLocation.contactPhone}`;
+              Linking.openURL(phoneUrl).catch(() => 
+                Alert.alert('Error', 'Could not open phone app')
+              );
+            }}
+          >
             Call Customer
           </Button>
-          <Button mode="contained" style={styles.actionButton}>
+          <Button 
+            mode="contained" 
+            style={styles.actionButton}
+            onPress={() => {
+              setSelectedDelivery(delivery);
+              setShowStatusModal(true);
+            }}
+            loading={updateStatusMutation.isPending && selectedDelivery?._id === delivery._id}
+          >
             Update Status
           </Button>
         </Card.Actions>
@@ -313,6 +349,13 @@ const DeliveryAgentDashboard = () => {
       </View>
     );
   }
+
+  const statusOptions = [
+    { label: 'Picked Up', value: 'picked_up', color: '#2196F3' },
+    { label: 'In Transit', value: 'in_transit', color: '#FF9800' },
+    { label: 'Delivered', value: 'delivered', color: '#4CAF50' },
+    { label: 'Failed', value: 'failed', color: '#F44336' }
+  ];
 
   return (
     <View style={styles.container}>
