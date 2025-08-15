@@ -1,5 +1,12 @@
-const { Resend } = require('resend');
-const nodemailer = require('nodemailer');
+// Safe imports with fallbacks for Railway deployment
+let Resend, nodemailer;
+try {
+  Resend = require('resend').Resend;
+  nodemailer = require('nodemailer');
+} catch (error) {
+  console.warn('⚠️ Email dependencies not available:', error.message);
+}
+
 const config = require('../config/config');
 
 class EmailService {
@@ -10,26 +17,31 @@ class EmailService {
   }
 
   initializeServices() {
-    // Initialize Resend (Primary - 3000 emails/month free)
-    if (config.email.resendApiKey) {
-      this.resend = new Resend(config.email.resendApiKey);
-      console.log('📧 Resend email service initialized');
-    }
+    try {
+      // Initialize Resend (Primary - 3000 emails/month free)
+      if (Resend && config.email.resendApiKey) {
+        this.resend = new Resend(config.email.resendApiKey);
+        console.log('📧 Resend email service initialized');
+      }
 
-    // Initialize Gmail SMTP (Fallback - unlimited for personal use)
-    if (config.email.gmail.user && config.email.gmail.password) {
-      this.gmailTransporter = nodemailer.createTransporter({
-        service: 'gmail',
-        auth: {
-          user: config.email.gmail.user,
-          pass: config.email.gmail.password // Use App Password, not regular password
-        }
-      });
-      console.log('📧 Gmail SMTP service initialized');
-    }
+      // Initialize Gmail SMTP (Fallback - unlimited for personal use)
+      if (nodemailer && config.email.gmail.user && config.email.gmail.password) {
+        this.gmailTransporter = nodemailer.createTransporter({
+          service: 'gmail',
+          auth: {
+            user: config.email.gmail.user,
+            pass: config.email.gmail.password // Use App Password, not regular password
+          }
+        });
+        console.log('📧 Gmail SMTP service initialized');
+      }
 
-    if (!this.resend && !this.gmailTransporter) {
-      console.warn('⚠️ No email service configured. Emails will be logged only.');
+      if (!this.resend && !this.gmailTransporter) {
+        console.warn('⚠️ No email service configured. Emails will be logged only.');
+      }
+    } catch (error) {
+      console.error('⚠️ Email service initialization failed:', error.message);
+      console.log('📧 Email service will use console logging fallback');
     }
   }
 
