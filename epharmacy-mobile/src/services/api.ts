@@ -12,6 +12,7 @@ const EXTRA: any = (Constants?.expoConfig?.extra || (Constants as any)?.manifest
 const EXTRA_API: string | undefined = EXTRA.apiBaseUrl;
 
 const LOCAL_API = 'http://localhost:8000';
+const LOCAL_API_ANDROID = 'http://10.0.2.2:8000';
 
 // Compile-time fallback by reading app.json (packaged string)
 let APP_JSON_API: string | undefined;
@@ -23,7 +24,7 @@ try {
 
 // Final base URL resolution
 const API_BASE_URL = (ENV_API || EXTRA_API || APP_JSON_API) || (__DEV__
-  ? (Platform.select({ ios: LOCAL_API, android: LOCAL_API, default: LOCAL_API }))
+  ? (Platform.select({ ios: LOCAL_API, android: LOCAL_API_ANDROID, default: LOCAL_API }))
   : LOCAL_API);
 
 // Create axios instance

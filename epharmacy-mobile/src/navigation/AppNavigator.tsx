@@ -39,6 +39,7 @@ import DoctorOnboardingScreen from '../screens/doctor/DoctorOnboardingScreen';
 import DoctorBookingsScreen from '../screens/doctor/DoctorBookingsScreen';
 import UsersAdminScreen from '../screens/admin/UsersAdminScreen';
 import CatalogAdminScreen from '../screens/admin/CatalogAdminScreen';
+import DeliveryAgentDashboard from '../screens/delivery/DeliveryAgentDashboard';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -350,6 +351,42 @@ const DoctorTabs = () => (
   </Tab.Navigator>
 );
 
+// Delivery Agent Tab Navigator
+const DeliveryAgentTabs = () => (
+  <Tab.Navigator
+    screenOptions={({ route }) => ({
+      tabBarIcon: ({ color, size }) => {
+        let icon: keyof typeof MaterialIcons.glyphMap = 'delivery-dining';
+        if (route.name === 'Deliveries') icon = 'delivery-dining';
+        if (route.name === 'Profile') icon = 'person';
+        return <MaterialIcons name={icon} size={size} color={color} />;
+      },
+      tabBarActiveTintColor: '#FF9800',
+      tabBarInactiveTintColor: 'gray',
+      headerStyle: { backgroundColor: '#FF9800' },
+      headerTintColor: '#fff',
+      headerTitleStyle: { fontWeight: 'bold' },
+      tabBarStyle: {
+        paddingBottom: 5,
+        paddingTop: 5,
+        height: 60,
+      },
+      tabBarItemStyle: { 
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      tabBarLabelStyle: {
+        fontSize: 11,
+        marginTop: -5,
+      }
+    })}
+  >
+    <Tab.Screen name="Deliveries" component={DeliveryAgentDashboard} options={{ title: 'My Deliveries' }} />
+    <Tab.Screen name="Profile" component={ProfileScreen} />
+  </Tab.Navigator>
+);
+
 // Admin Tab Navigator
 const AdminTabs = () => (
   <Tab.Navigator
@@ -422,6 +459,8 @@ const AppNavigator = () => {
         return <DoctorTabs />;
       case 'admin':
         return <AdminTabs />;
+      case 'delivery_agent':
+        return <DeliveryAgentTabs />;
       default:
         return <CustomerStack />;
     }

@@ -5,6 +5,8 @@ import * as ImagePicker from 'expo-image-picker';
 import DatePickerField from '../../components/DatePickerField';
 import { useMutation } from '@tanstack/react-query';
 import { authApi } from '../../services/api';
+import * as Location from 'expo-location';
+const ENABLE_LOCATION_CAPTURE = (process.env.EXPO_PUBLIC_ENABLE_LOCATION_CAPTURE || '').toLowerCase() === 'true';
 
 const RegisterScreen = ({ navigation }: any) => {
   const [firstName, setFirstName] = useState('');
@@ -32,6 +34,8 @@ const RegisterScreen = ({ navigation }: any) => {
   const [errors, setErrors] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [profileUri, setProfileUri] = useState<string | null>(null);
+  const [capturedCoords, setCapturedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   const registerMutation = useMutation({
     mutationFn: async () => {
@@ -39,6 +43,10 @@ const RegisterScreen = ({ navigation }: any) => {
         firstName, lastName, email, password, phone, role,
         address: { street, city, state: stateName, zipCode }
       };
+      if (ENABLE_LOCATION_CAPTURE && capturedCoords) {
+        payload.address.coordinates = capturedCoords;
+      }
+      // Location capture disabled (behind feature flag). No dependency on expo-location.
       if (role === 'pharmacist') Object.assign(payload, { licenseNumber, licenseExpiry, pharmacyName });
       if (role === 'doctor') Object.assign(payload, { licenseNumber, licenseExpiry });
       if (role === 'delivery_agent') Object.assign(payload, { vehicleType, vehicleNumber, drivingLicense });
@@ -90,6 +98,25 @@ const RegisterScreen = ({ navigation }: any) => {
     try { await registerMutation.mutateAsync(); } finally { setLoading(false); }
   };
 
+  const captureCurrentLocation = async () => {
+    if (!ENABLE_LOCATION_CAPTURE) return;
+    setLocLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setMsg('Location permission denied');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setCapturedCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      setMsg('Location captured');
+    } catch (e: any) {
+      setMsg('Failed to capture location');
+    } finally {
+      setLocLoading(false);
+    }
+  };
+
   const pickProfileImage = async () => {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
@@ -120,7 +147,11 @@ const RegisterScreen = ({ navigation }: any) => {
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Create an account</Text>
       <View style={{ alignItems: 'center', marginBottom: 8 }}>
-        <Avatar.Image size={84} source={profileUri ? { uri: profileUri } : undefined} />
+        {profileUri ? (
+          <Avatar.Image size={84} source={{ uri: profileUri }} />
+        ) : (
+          <Avatar.Icon size={84} icon="account" />
+        )}
         <Button mode="text" onPress={pickProfileImage} style={{ marginTop: 6 }}>Add Profile Photo</Button>
       </View>
 
@@ -164,6 +195,19 @@ const RegisterScreen = ({ navigation }: any) => {
         <TextInput label="State" value={stateName} onChangeText={setStateName} mode="outlined" style={[styles.input, styles.half]} error={!!errors.stateName} />
       </View>
       <TextInput label="ZIP Code" value={zipCode} onChangeText={setZipCode} mode="outlined" style={styles.input} keyboardType='number-pad' error={!!errors.zipCode} />
+
+      {ENABLE_LOCATION_CAPTURE && (
+        <View>
+          <Button mode="outlined" onPress={captureCurrentLocation} loading={locLoading} disabled={locLoading}>
+            {locLoading ? 'Capturing Location...' : 'Use Current Location (Optional)'}
+          </Button>
+          {capturedCoords && (
+            <Text style={{ marginTop: 6, color: '#666' }}>
+              {capturedCoords.latitude.toFixed(6)}, {capturedCoords.longitude.toFixed(6)}
+            </Text>
+          )}
+        </View>
+      )}
 
       {(role === 'pharmacist' || role === 'doctor') && (
         <>

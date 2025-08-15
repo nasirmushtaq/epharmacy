@@ -17,9 +17,13 @@ import {
   Switch,
   ActivityIndicator,
   Divider,
+  Surface,
 } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useAddress, Address } from '../contexts/AddressContext';
+
+const ENABLE_LOCATION_CAPTURE = (process.env.EXPO_PUBLIC_ENABLE_LOCATION_CAPTURE || '').toLowerCase() === 'true';
 
 interface AddressFormModalProps {
   visible: boolean;
@@ -40,6 +44,7 @@ interface AddressFormData {
   landmark: string;
   addressType: 'home' | 'office' | 'other';
   isDefault: boolean;
+  coordinates?: { latitude: number; longitude: number };
 }
 
 const initialFormData: AddressFormData = {
@@ -66,8 +71,29 @@ export const AddressFormModal: React.FC<AddressFormModalProps> = ({
   const [formData, setFormData] = useState<AddressFormData>(initialFormData);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [capturedCoords, setCapturedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   const isEditing = Boolean(editingAddress);
+
+  const captureCurrentLocation = async () => {
+    if (!ENABLE_LOCATION_CAPTURE) return;
+    setLocLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to capture your current location.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setCapturedCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      Alert.alert('Success', 'Location captured successfully');
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to capture location. Please try again.');
+    } finally {
+      setLocLoading(false);
+    }
+  };
 
   // Reset form when modal visibility changes
   useEffect(() => {
@@ -146,6 +172,10 @@ export const AddressFormModal: React.FC<AddressFormModalProps> = ({
         landmark: formData.landmark.trim() || undefined,
         addressType: formData.addressType,
         isDefault: formData.isDefault,
+        location: capturedCoords ? {
+          latitude: capturedCoords.latitude,
+          longitude: capturedCoords.longitude
+        } : undefined,
       };
 
       let savedAddress: Address;
@@ -325,6 +355,46 @@ export const AddressFormModal: React.FC<AddressFormModalProps> = ({
               />
               {errors.zipCode && <Text style={styles.errorText}>{errors.zipCode}</Text>}
 
+              {/* Location Capture */}
+              {ENABLE_LOCATION_CAPTURE && (
+                <View style={styles.locationSection}>
+                  <Text style={styles.sectionTitle}>Location (Optional)</Text>
+                  <Surface style={styles.locationContainer}>
+                    {capturedCoords ? (
+                      <View style={styles.locationInfo}>
+                        <MaterialIcons name="location-on" size={24} color="#4CAF50" />
+                        <View style={[styles.locationText, { marginLeft: 12 }]}>
+                          <Text style={styles.locationTitle}>Location Captured</Text>
+                          <Text style={styles.locationCoords}>
+                            {capturedCoords.latitude.toFixed(6)}, {capturedCoords.longitude.toFixed(6)}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.locationInfo}>
+                        <MaterialIcons name="location-off" size={24} color="#999" />
+                        <View style={[styles.locationText, { marginLeft: 12 }]}>
+                          <Text style={styles.locationTitle}>No location captured</Text>
+                          <Text style={styles.locationSubtext}>
+                            Capture your current location for accurate delivery
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </Surface>
+                  <Button
+                    mode="outlined"
+                    onPress={captureCurrentLocation}
+                    loading={locLoading}
+                    disabled={locLoading || loading}
+                    style={styles.locationButton}
+                    icon="my-location"
+                  >
+                    {locLoading ? 'Capturing Location...' : 'Use Current Location'}
+                  </Button>
+                </View>
+              )}
+
               {/* Address Type */}
               <Text style={styles.sectionTitle}>Address Type</Text>
               <View style={styles.radioGroup}>
@@ -482,5 +552,38 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#2196F3',
     paddingVertical: 8,
+  },
+  locationSection: {
+    marginVertical: 16,
+  },
+  locationContainer: {
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  locationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationText: {
+    flex: 1,
+  },
+  locationTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  locationCoords: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  locationSubtext: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  locationButton: {
+    marginBottom: 8,
   },
 });

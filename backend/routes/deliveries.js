@@ -56,11 +56,19 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // Get pickup location (pharmacy address)
+    // Get pickup location - Use Sopore as central dispatch location
+    // Sopore coordinates: 34.298676, 74.470146 (Apple Town of Kashmir)
     const pickupCoords = {
-      latitude: order.pharmacy.address?.location?.latitude || 34.0837,
-      longitude: order.pharmacy.address?.location?.longitude || 74.7973
+      latitude: 34.298676,  // Sopore latitude
+      longitude: 74.470146  // Sopore longitude
     };
+
+    // Validate pharmacy coordinates are set (for future route optimization)
+    if (!order.pharmacy.hasValidCoordinates || !order.pharmacy.hasValidCoordinates()) {
+      console.warn(`⚠️ Pharmacy ${order.pharmacy._id} missing valid coordinates. Using central dispatch (Sopore).`);
+    } else {
+      console.log(`✅ Pharmacy ${order.pharmacy._id} has valid coordinates but using central dispatch (Sopore) for consistency.`);
+    }
 
     // Get delivery location
     const deliveryCoords = {
@@ -88,11 +96,19 @@ router.post('/', auth, async (req, res) => {
       deliveryAgentId: agentId,
       
       pickupLocation: {
-        address: `${order.pharmacy.address?.street || ''}, ${order.pharmacy.address?.city || ''}`,
+        address: 'Central Dispatch - Sopore, Baramulla, Jammu & Kashmir 193201',
         latitude: pickupCoords.latitude,
         longitude: pickupCoords.longitude,
-        contactName: `${order.pharmacy.firstName} ${order.pharmacy.lastName}`,
-        contactPhone: order.pharmacy.phone
+        contactName: 'Central Dispatch',
+        contactPhone: order.pharmacy.phone, // Keep pharmacy contact for coordination
+        pharmacyDetails: {
+          name: `${order.pharmacy.firstName} ${order.pharmacy.lastName}`,
+          address: `${order.pharmacy.address?.street || ''}, ${order.pharmacy.address?.city || ''}`,
+          coordinates: order.pharmacy.getCoordinates ? order.pharmacy.getCoordinates() : {
+            latitude: order.pharmacy.address?.coordinates?.latitude || null,
+            longitude: order.pharmacy.address?.coordinates?.longitude || null
+          }
+        }
       },
       
       deliveryLocation: {
@@ -139,6 +155,87 @@ router.post('/', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Create delivery error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/deliveries/available
+// @desc    Get available orders for delivery assignment (for delivery agents)
+// @access  Private (Delivery Agent only)
+router.get('/available', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'delivery_agent') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Delivery agent role required.'
+      });
+    }
+
+    const { page = 1, limit = 10, lat, lng } = req.query;
+    
+    // Find orders ready for delivery (confirmed/processing) without assigned delivery agent
+    const availableOrders = await Order.find({
+      status: { $in: ['confirmed', 'processing'] },
+      pharmacy: { $exists: true, $ne: null }, // Must have pharmacy assigned
+      $or: [
+        { 'delivery.agent': { $exists: false } },
+        { 'delivery.agent': null }
+      ]
+    })
+    .populate('customer', 'firstName lastName phone')
+    .populate('pharmacy', 'firstName lastName phone address')
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit);
+
+    // Calculate distances if agent location provided
+    if (lat && lng) {
+      const agentLat = parseFloat(lat);
+      const agentLng = parseFloat(lng);
+      
+      availableOrders.forEach(order => {
+        if (order.deliveryAddress && order.deliveryAddress.coordinates) {
+          const distance = calculateDistance(
+            agentLat, agentLng,
+            order.deliveryAddress.coordinates.latitude,
+            order.deliveryAddress.coordinates.longitude
+          );
+          order._doc.distanceFromAgent = Math.round(distance * 100) / 100; // Round to 2 decimals
+        }
+      });
+      
+      // Sort by distance (closest first)
+      availableOrders.sort((a, b) => (a._doc.distanceFromAgent || 999) - (b._doc.distanceFromAgent || 999));
+    }
+
+    const total = await Order.countDocuments({
+      status: { $in: ['confirmed', 'processing'] },
+      pharmacy: { $exists: true, $ne: null },
+      $or: [
+        { 'delivery.agent': { $exists: false } },
+        { 'delivery.agent': null }
+      ]
+    });
+
+    res.json({
+      success: true,
+      data: {
+        orders: availableOrders,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / parseInt(limit)),
+          total,
+          limit: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get available orders error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -376,5 +473,154 @@ router.get('/:id/track', auth, async (req, res) => {
     });
   }
 });
+
+// @route   POST /api/deliveries/assign-self
+// @desc    Allow delivery agent to assign themselves to an order
+// @access  Private (Delivery Agent only)
+router.post('/assign-self', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'delivery_agent') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Delivery agent role required.'
+      });
+    }
+
+    const { orderId } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    // Verify order exists and is available for delivery
+    const order = await Order.findById(orderId)
+      .populate('customer', 'firstName lastName phone')
+      .populate('pharmacy', 'firstName lastName phone address');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    if (!['confirmed', 'processing'].includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order is not ready for delivery'
+      });
+    }
+
+    if (!order.pharmacy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order must have pharmacy assigned first'
+      });
+    }
+
+    // Check if delivery already assigned
+    if (order.delivery && order.delivery.agent) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order already assigned to another delivery agent'
+      });
+    }
+
+    // Check if delivery record already exists
+    const existingDelivery = await Delivery.findOne({ orderId });
+    if (existingDelivery) {
+      return res.status(400).json({
+        success: false,
+        message: 'Delivery already assigned for this order'
+      });
+    }
+
+    // Assign delivery agent to order
+    order.delivery = {
+      agent: req.user.id,
+      status: 'assigned',
+      assignedAt: new Date()
+    };
+    order.status = 'out_for_delivery';
+    await order.save();
+
+    // Create delivery record (simplified for self-assignment)
+    const delivery = new Delivery({
+      orderId: order._id,
+      customerId: order.customer._id,
+      pharmacyId: order.pharmacy._id,
+      deliveryAgentId: req.user.id,
+      
+      pickupLocation: {
+        address: 'Central Dispatch - Sopore, Baramulla, Jammu & Kashmir 193201',
+        latitude: 34.298676,
+        longitude: 74.470146,
+        contactName: 'Central Dispatch',
+        contactPhone: order.pharmacy.phone || '1234567890'
+      },
+      
+      deliveryLocation: {
+        address: `${order.deliveryAddress.street}, ${order.deliveryAddress.city}`,
+        latitude: order.deliveryAddress.coordinates?.latitude || 0,
+        longitude: order.deliveryAddress.coordinates?.longitude || 0,
+        contactName: order.deliveryAddress.name || order.customer.firstName,
+        contactPhone: order.deliveryAddress.phone || order.customer.phone
+      },
+      
+      distance: 0, // Will be calculated by frontend or updated later
+      estimatedTime: 60, // Default 1 hour
+      deliveryFee: order.deliveryCharges || 50,
+      
+      status: 'assigned',
+      assignedAt: new Date()
+    });
+
+    await delivery.save();
+
+    const populatedDelivery = await Delivery.findById(delivery._id)
+      .populate('deliveryAgentId', 'firstName lastName phone')
+      .populate('customerId', 'firstName lastName phone')
+      .populate('pharmacyId', 'firstName lastName phone')
+      .populate('orderId', 'orderNumber total items');
+
+    res.json({
+      success: true,
+      message: 'Order assigned successfully',
+      data: populatedDelivery
+    });
+
+  } catch (error) {
+    console.error('Self-assign delivery error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to calculate distance between two coordinates
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * 
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  return distance;
+}
+
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
+}
 
 module.exports = router;

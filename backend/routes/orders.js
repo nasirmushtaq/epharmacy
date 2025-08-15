@@ -746,7 +746,7 @@ router.get('/status/pending', authenticate, authorize('pharmacist', 'admin'), as
     const orders = await Order.find(filter)
     .populate('customer', 'firstName lastName phone')
     .populate('items.medicine', 'name brand')
-    .sort({ priority: -1, createdAt: 1 })
+    .sort({ priority: -1, createdAt: -1 })
     .skip(skip)
     .limit(parseInt(limit));
 

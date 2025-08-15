@@ -172,10 +172,11 @@ addressSchema.methods.isWithinSrinagar = function() {
   return openRouteService.isWithinSrinagar(this.location.latitude, this.location.longitude);
 };
 
-// Validate if coordinates match the city
+// Validate if coordinates match the city (only when feature flag is enabled)
 addressSchema.pre('save', function(next) {
   if (this.location?.latitude && this.location?.longitude) {
-    if (!this.isWithinSrinagar()) {
+    const config = require('../config/config');
+    if (config.featureFlags.enforceLocationRestrictions && !this.isWithinSrinagar()) {
       return next(new Error('Address coordinates must be within Srinagar city limits'));
     }
   }

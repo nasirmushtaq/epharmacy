@@ -88,7 +88,12 @@ router.post('/register', uploadProfileImage, [
 
     // Enforce allowed pincodes for customer accounts
     try {
-      if (role === 'customer' && Array.isArray(config.allowedPincodes) && config.allowedPincodes.length > 0) {
+      if (
+        role === 'customer' &&
+        Array.isArray(config.allowedPincodes) &&
+        config.allowedPincodes.length > 0 &&
+        config.featureFlags.enforceLocationRestrictions
+      ) {
         const pin = String(address?.zipCode || '').trim();
         if (!pin || !config.allowedPincodes.includes(pin)) {
           return res.status(400).json({ success: false, message: 'Service not available at this pincode' });

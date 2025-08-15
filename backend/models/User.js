@@ -259,4 +259,26 @@ userSchema.methods.incLoginAttempts = function() {
   return this.updateOne(updates);
 };
 
+// Instance method to check if pharmacy has valid coordinates
+userSchema.methods.hasValidCoordinates = function() {
+  if (this.role !== 'pharmacist') return true; // Only validate for pharmacists
+  
+  return !!(this.address?.coordinates?.latitude && 
+           this.address?.coordinates?.longitude &&
+           this.address.coordinates.latitude >= -90 && 
+           this.address.coordinates.latitude <= 90 &&
+           this.address.coordinates.longitude >= -180 && 
+           this.address.coordinates.longitude <= 180);
+};
+
+// Instance method to get pharmacy coordinates or null if invalid
+userSchema.methods.getCoordinates = function() {
+  if (!this.hasValidCoordinates()) return null;
+  
+  return {
+    latitude: this.address.coordinates.latitude,
+    longitude: this.address.coordinates.longitude
+  };
+};
+
 module.exports = mongoose.model('User', userSchema); 

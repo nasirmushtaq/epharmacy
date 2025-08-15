@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const openRouteService = require('../config/openroute');
+const config = require('../config/config');
 const { authenticate: auth } = require('../middleware/auth');
 
 // @route   GET /api/geocoding/search
@@ -222,15 +223,20 @@ router.post('/validate-address', auth, async (req, res) => {
     const geocodedAddress = result.results[0];
 
     // Check if geocoded address is within Srinagar
-    if (!openRouteService.isWithinSrinagar(
+    const outsideArea = !openRouteService.isWithinSrinagar(
       geocodedAddress.coordinates.latitude,
       geocodedAddress.coordinates.longitude
-    )) {
-      return res.status(400).json({
-        success: false,
-        message: 'Address is outside Srinagar delivery area',
-        geocoded: geocodedAddress
-      });
+    );
+    if (outsideArea) {
+      if (config.featureFlags.enforceLocationRestrictions) {
+        return res.status(400).json({
+          success: false,
+          message: 'Address is outside Srinagar delivery area',
+          geocoded: geocodedAddress
+        });
+      } else {
+        console.warn('Location outside service area, but allowed by feature flag.');
+      }
     }
 
     res.json({

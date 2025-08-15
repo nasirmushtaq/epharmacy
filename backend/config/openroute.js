@@ -78,10 +78,10 @@ class OpenRouteService {
         text: address,
         size: options.size || 5,
         'boundary.country': 'IN', // India
-        'focus.point.lat': 34.0837, // Srinagar center (main city)
-        'focus.point.lon': 74.7973,
-        'boundary.circle.lat': 34.0837,
-        'boundary.circle.lon': 74.7973,
+        'focus.point.lat': 34.298676, // Sopore center (central dispatch)
+        'focus.point.lon': 74.470146,
+        'boundary.circle.lat': 34.298676,
+        'boundary.circle.lon': 74.470146,
         'boundary.circle.radius': 200, // 200km radius to cover entire Kashmir
         layers: options.layers || ['address', 'street', 'venue']
       };
@@ -195,10 +195,10 @@ class OpenRouteService {
         text,
         size: options.size || 5,
         'boundary.country': 'IN',
-        'focus.point.lat': 34.0837,
-        'focus.point.lon': 74.7973,
-        'boundary.circle.lat': 34.0837,
-        'boundary.circle.lon': 74.7973,
+        'focus.point.lat': 34.298676, // Sopore center (central dispatch)
+        'focus.point.lon': 74.470146,
+        'boundary.circle.lat': 34.298676,
+        'boundary.circle.lon': 74.470146,
         'boundary.circle.radius': 200,
         layers: ['address', 'street', 'venue']
       };

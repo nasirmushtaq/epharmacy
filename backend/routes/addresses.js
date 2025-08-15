@@ -87,9 +87,13 @@ router.post('/', authenticate, async (req, res) => {
       });
     }
 
-    // Enforce allowed pincodes
+    // Enforce allowed pincodes only if feature flag is enabled
     const pin = String(zipCode).trim();
-    if (Array.isArray(config.allowedPincodes) && config.allowedPincodes.length > 0) {
+    if (
+      config.featureFlags.enforceLocationRestrictions &&
+      Array.isArray(config.allowedPincodes) && 
+      config.allowedPincodes.length > 0
+    ) {
       if (!pin || !config.allowedPincodes.includes(pin)) {
         return res.status(400).json({ success: false, message: 'Service not available at this pincode' });
       }
@@ -187,7 +191,11 @@ router.put('/:id', authenticate, async (req, res) => {
     if (state !== undefined) address.state = state.trim();
     if (zipCode !== undefined) {
       const pin = String(zipCode).trim();
-      if (Array.isArray(config.allowedPincodes) && config.allowedPincodes.length > 0) {
+      if (
+        config.featureFlags.enforceLocationRestrictions &&
+        Array.isArray(config.allowedPincodes) && 
+        config.allowedPincodes.length > 0
+      ) {
         if (!pin || !config.allowedPincodes.includes(pin)) {
           return res.status(400).json({ success: false, message: 'Service not available at this pincode' });
         }

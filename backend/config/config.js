@@ -64,6 +64,26 @@ const config = {
 
   // Serviceability: allowed pin codes (comma separated). If empty -> no restriction
   allowedPincodes: toArray(process.env.ALLOWED_PINCODES || ''),
+
+  // Feature Flags
+  featureFlags: {
+    // When true: reject addresses outside service area (e.g., Srinagar)
+    // When false: allow any coordinates/address; only warn server-side
+    enforceLocationRestrictions: ['true','1','yes'].includes(String(process.env.FEATURE_ENFORCE_LOCATION || '').toLowerCase()),
+  },
+
+  // Delivery configuration
+  delivery: {
+    centralLocation: {
+      name: process.env.DELIVERY_CENTRAL_LOCATION_NAME || 'Bangalore',
+      latitude: parseFloat(process.env.DELIVERY_CENTRAL_LAT || '12.9716'),
+      longitude: parseFloat(process.env.DELIVERY_CENTRAL_LNG || '77.5946'),
+    },
+    baseFee: parseFloat(process.env.DELIVERY_BASE_FEE || '50'),
+    perKmRate: parseFloat(process.env.DELIVERY_PER_KM_RATE || '8'),
+    freeDeliveryThreshold: parseFloat(process.env.FREE_DELIVERY_THRESHOLD || '500'),
+    maxDeliveryDistance: parseFloat(process.env.MAX_DELIVERY_DISTANCE || '50'), // km
+  },
 };
 
 module.exports = config;

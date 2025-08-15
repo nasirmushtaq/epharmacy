@@ -109,7 +109,7 @@ const CartScreen = () => {
   // Upload mutation for prescriptions
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      // Backend expects POST /api/prescriptions with field 'prescription'
+      // Backend expects POST /api/prescriptions with field 'documents'
       const response = await api.post('/api/prescriptions', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -191,12 +191,12 @@ const CartScreen = () => {
           const res = await fetch(uri);
           const blob = await res.blob();
           const file = new File([blob], name, { type });
-          formData.append('prescription', file as any);
+          formData.append('documents', file as any);
         } catch (e) {
           console.warn('Blob conversion failed for', uri, e);
         }
       } else {
-        formData.append('prescription', {
+        formData.append('documents', {
           uri,
           name,
           type,
