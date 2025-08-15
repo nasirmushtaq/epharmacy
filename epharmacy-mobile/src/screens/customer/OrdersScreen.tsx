@@ -46,6 +46,7 @@ const OrdersScreen = () => {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [detailsVisible, setDetailsVisible] = useState(false);
   const [detailsData, setDetailsData] = useState<any>(null);
+  const cartContext = useCart();
 
   // Fetch orders from API
   const { data: orders = [], isLoading, error, refetch } = useQuery({

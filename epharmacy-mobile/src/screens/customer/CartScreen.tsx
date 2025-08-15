@@ -532,12 +532,9 @@ const CartScreen = () => {
         console.log('⚠️ Navigation not available, showing fallback');
         Alert.alert('Info', 'Please use the Medicines tab at the bottom to browse products.');
       }
-    } catch (error) {
-            console.error('Navigation error:', error);
-          }
-        }
-      }
-    ]);
+      console.error('Navigation error:', error);
+      Alert.alert('Error', 'Navigation failed. Please use the Medicines tab at the bottom.');
+    }
   };
 
   const processOrder = async () => {
