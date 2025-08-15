@@ -61,14 +61,54 @@ const addressSchema = new mongoose.Schema({
   location: {
     latitude: {
       type: Number,
+      required: true,
       min: -90,
       max: 90
     },
     longitude: {
       type: Number,
+      required: true,
       min: -180,
       max: 180
+    },
+    accuracy: {
+      type: Number, // GPS accuracy in meters
+      min: 0
+    },
+    source: {
+      type: String,
+      enum: ['gps', 'network', 'manual', 'google_maps'],
+      default: 'manual'
     }
+  },
+  
+  // Google Maps Integration
+  googleMapsData: {
+    placeId: String, // Google Place ID for precise location
+    formattedAddress: String, // Google formatted address
+    addressComponents: [{
+      longName: String,
+      shortName: String,
+      types: [String]
+    }],
+    geometry: {
+      location: {
+        lat: Number,
+        lng: Number
+      },
+      locationType: String, // ROOFTOP, RANGE_INTERPOLATED, etc.
+      viewport: {
+        northeast: {
+          lat: Number,
+          lng: Number
+        },
+        southwest: {
+          lat: Number,
+          lng: Number
+        }
+      }
+    },
+    types: [String] // Place types from Google
   },
   isDefault: {
     type: Boolean,
@@ -111,6 +151,57 @@ addressSchema.virtual('fullAddress').get(function() {
   if (this.landmark) parts.push(`Near ${this.landmark}`);
   parts.push(`${this.city}, ${this.state} ${this.zipCode}`);
   return parts.join(', ');
+});
+
+// Calculate distance to another address
+addressSchema.methods.distanceTo = function(otherAddress) {
+  if (!this.location?.latitude || !this.location?.longitude || 
+      !otherAddress.location?.latitude || !otherAddress.location?.longitude) {
+    return null;
+  }
+  
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (otherAddress.location.latitude - this.location.latitude) * Math.PI / 180;
+  const dLon = (otherAddress.location.longitude - this.location.longitude) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(this.location.latitude * Math.PI / 180) * Math.cos(otherAddress.location.latitude * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c;
+  return Math.round(distance * 100) / 100; // Round to 2 decimal places
+};
+
+// Check if address is within Srinagar city limits
+addressSchema.methods.isWithinSrinagar = function() {
+  if (!this.location?.latitude || !this.location?.longitude) {
+    return false;
+  }
+  
+  // Srinagar approximate boundaries
+  const srinargarBounds = {
+    north: 34.1269,
+    south: 34.0837,
+    east: 74.8370,
+    west: 74.7729
+  };
+  
+  return (
+    this.location.latitude >= srinargarBounds.south &&
+    this.location.latitude <= srinargarBounds.north &&
+    this.location.longitude >= srinargarBounds.west &&
+    this.location.longitude <= srinargarBounds.east
+  );
+};
+
+// Validate if coordinates match the city
+addressSchema.pre('save', function(next) {
+  if (this.location?.latitude && this.location?.longitude) {
+    if (!this.isWithinSrinagar()) {
+      return next(new Error('Address coordinates must be within Srinagar city limits'));
+    }
+  }
+  next();
 });
 
 // Ensure virtuals are included in JSON output
