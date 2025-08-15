@@ -282,11 +282,15 @@ router.post('/', authenticate, [
     const order = await Order.create(newOrder);
     await order.populate(getPopulateFields(orderType));
 
-    // Send order confirmation email
+    // Send order confirmation email (gracefully handle missing email service)
     try {
       const customer = await User.findById(req.user._id);
-      await emailService.sendOrderConfirmationEmail(order, customer);
-      console.log(`✅ Order confirmation email sent to ${customer.email}`);
+      if (emailService && emailService.sendOrderConfirmationEmail) {
+        await emailService.sendOrderConfirmationEmail(order, customer);
+        console.log(`✅ Order confirmation email sent to ${customer.email}`);
+      } else {
+        console.log(`⚠️ Email service not configured, order ${order.orderNumber} created for ${customer.email}`);
+      }
     } catch (error) {
       console.error('❌ Failed to send order confirmation email:', error.message);
       // Don't fail order creation if email fails

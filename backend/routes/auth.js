@@ -164,12 +164,17 @@ router.post('/register', uploadProfileImage, [
     };
     await user.save();
 
-    // Send OTP via email
+    // Send OTP via email (gracefully handle missing email service)
     try {
-      await emailService.sendOTPEmail(user.email, code, user.firstName);
-      console.log(`✅ OTP email sent to ${user.email}`);
+      if (emailService && emailService.sendOTPEmail) {
+        await emailService.sendOTPEmail(user.email, code, user.firstName);
+        console.log(`✅ OTP email sent to ${user.email}`);
+      } else {
+        console.log(`⚠️ Email service not configured, OTP: ${code} (for development)`);
+      }
     } catch (error) {
       console.error('❌ Failed to send OTP email:', error.message);
+      console.log(`⚠️ OTP for ${user.email}: ${code} (fallback due to email error)`);
       // Don't fail registration if email fails
     }
 
@@ -270,12 +275,15 @@ router.post('/request-otp', [
     user.otp = { code, channel: email ? 'email' : 'phone', expireAt: new Date(Date.now() + 10 * 60 * 1000) };
     await user.save();
     try {
-      if (email) {
+      if (email && emailService && emailService.sendOTPEmail) {
         await emailService.sendOTPEmail(email.toLowerCase(), code, user.firstName);
         console.log(`✅ OTP email sent to ${email}`);
+      } else {
+        console.log(`⚠️ Email service not configured, OTP: ${code} (for ${email})`);
       }
     } catch (error) {
       console.error('❌ Failed to send OTP email:', error.message);
+      console.log(`⚠️ OTP for ${email}: ${code} (fallback due to email error)`);
     }
     res.json({ success: true, message: 'OTP sent', data: { otpChannel: user.otp.channel } });
   } catch (e) {
