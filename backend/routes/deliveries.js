@@ -1,60 +1,31 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
+const router = express.Router();
 const Delivery = require('../models/Delivery');
 const Order = require('../models/Order');
 const User = require('../models/User');
-const { authenticate, authorize } = require('../middleware/auth');
-const { uploadDeliveryProof } = require('../middleware/upload');
+const auth = require('../middleware/auth');
 
-const router = express.Router();
-
-// @desc    Get available delivery agents
-// @route   GET /api/deliveries/agents/available
-// @access  Private (Pharmacist/Admin only)
-router.get('/agents/available', authenticate, authorize('pharmacist', 'admin'), async (req, res) => {
+// @route   POST /api/deliveries
+// @desc    Create a new delivery for an order
+// @access  Private (Admin/Pharmacist)
+router.post('/', auth, async (req, res) => {
   try {
-    const agents = await User.find({
-      role: 'delivery_agent',
-      isActive: true,
-      isAvailable: true
-    }).select('firstName lastName phone vehicleType vehicleNumber currentLocation');
+    const { orderId, agentId, priority = 'normal' } = req.body;
 
-    res.json({
-      success: true,
-      data: agents
-    });
-
-  } catch (error) {
-    console.error('Get available agents error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-});
-
-// @desc    Assign delivery to agent
-// @route   POST /api/deliveries/assign
-// @access  Private (Pharmacist/Admin only)
-router.post('/assign', authenticate, authorize('pharmacist', 'admin'), [
-  body('orderId').notEmpty().withMessage('Order ID is required'),
-  body('agentId').notEmpty().withMessage('Agent ID is required'),
-  body('estimatedDeliveryTime').optional().isISO8601().withMessage('Valid estimated delivery time is required')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
+    // Check if user is admin or pharmacist
+    if (req.user.role !== 'admin' && req.user.role !== 'pharmacist') {
+      return res.status(403).json({
         success: false,
-        message: 'Validation errors',
-        errors: errors.array()
+        message: 'Access denied. Admin or pharmacist role required.'
       });
     }
 
-    const { orderId, agentId, estimatedDeliveryTime, deliveryInstructions } = req.body;
+    // Verify order exists
+    const order = await Order.findById(orderId)
+      .populate('customerId', 'firstName lastName phone')
+      .populate('pharmacy', 'firstName lastName phone address')
+      .populate('deliveryAddress');
 
-    // Verify order exists and is ready for delivery
-    const order = await Order.findById(orderId).populate('customer', 'firstName lastName phone address');
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -62,10 +33,12 @@ router.post('/assign', authenticate, authorize('pharmacist', 'admin'), [
       });
     }
 
-    if (order.status !== 'ready_for_pickup' && order.status !== 'processing') {
+    // Check if delivery already exists for this order
+    const existingDelivery = await Delivery.findOne({ orderId });
+    if (existingDelivery) {
       return res.status(400).json({
         success: false,
-        message: 'Order is not ready for delivery assignment'
+        message: 'Delivery already assigned for this order'
       });
     }
 
@@ -73,170 +46,170 @@ router.post('/assign', authenticate, authorize('pharmacist', 'admin'), [
     const agent = await User.findOne({
       _id: agentId,
       role: 'delivery_agent',
-      isActive: true,
-      isAvailable: true
+      isActive: true
     });
 
     if (!agent) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        message: 'Delivery agent not found or not available'
+        message: 'Delivery agent not found or unavailable'
       });
     }
 
-    // Create delivery
-    const deliveryData = {
-      order: orderId,
-      deliveryAgent: agentId,
-      customer: order.customer._id,
-      pickupAddress: {
-        street: 'Pharmacy Address', // This should come from pharmacy settings
-        city: 'Pharmacy City',
-        state: 'Pharmacy State',
-        zipCode: '123456'
-      },
-      deliveryAddress: order.deliveryAddress,
-      estimatedDeliveryTime: estimatedDeliveryTime || new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours default
-      deliveryInstructions
+    // Get pickup location (pharmacy address)
+    const pickupCoords = {
+      latitude: order.pharmacy.address?.location?.latitude || 34.0837,
+      longitude: order.pharmacy.address?.location?.longitude || 74.7973
     };
 
-    const delivery = await Delivery.create(deliveryData);
+    // Get delivery location
+    const deliveryCoords = {
+      latitude: order.deliveryAddress.location.latitude,
+      longitude: order.deliveryAddress.location.longitude
+    };
 
-    // Update order with delivery agent
-    await order.assignDeliveryAgent(agentId, estimatedDeliveryTime);
+    // Calculate route using OpenRouteService
+    const routeData = await Delivery.calculateDistanceAndRoute(
+      pickupCoords.latitude,
+      pickupCoords.longitude,
+      deliveryCoords.latitude,
+      deliveryCoords.longitude
+    );
 
-    // Update agent availability
-    agent.isAvailable = false;
-    await agent.save();
+    const distance = routeData.distance;
+    const estimatedTime = routeData.estimatedTime;
+    const deliveryFee = Delivery.calculateDeliveryFee(distance, priority);
 
-    // Populate delivery data
-    await delivery.populate('deliveryAgent', 'firstName lastName phone vehicleType vehicleNumber')
-                  .populate('customer', 'firstName lastName phone')
-                  .populate('order', 'orderNumber totalAmount');
+    // Create delivery
+    const delivery = new Delivery({
+      orderId,
+      customerId: order.customerId._id,
+      pharmacyId: order.pharmacy._id,
+      deliveryAgentId: agentId,
+      
+      pickupLocation: {
+        address: `${order.pharmacy.address?.street || ''}, ${order.pharmacy.address?.city || ''}`,
+        latitude: pickupCoords.latitude,
+        longitude: pickupCoords.longitude,
+        contactName: `${order.pharmacy.firstName} ${order.pharmacy.lastName}`,
+        contactPhone: order.pharmacy.phone
+      },
+      
+      deliveryLocation: {
+        address: `${order.deliveryAddress.line1}, ${order.deliveryAddress.city}`,
+        latitude: deliveryCoords.latitude,
+        longitude: deliveryCoords.longitude,
+        contactName: order.deliveryAddress.name,
+        contactPhone: order.deliveryAddress.phone
+      },
+      
+      distance,
+      estimatedTime,
+      deliveryFee: deliveryFee.totalFee,
+      
+      routeData: {
+        geometry: routeData.geometry,
+        fallback: routeData.fallback,
+        duration: routeData.duration,
+        bbox: routeData.bbox
+      },
+      
+      status: 'assigned',
+      assignedAt: new Date()
+    });
+
+    await delivery.save();
+
+    // Update order status
+    order.status = 'assigned_for_delivery';
+    order.deliveryFee = deliveryFee.totalFee;
+    order.total += deliveryFee.totalFee;
+    await order.save();
+
+    // Populate delivery for response
+    const populatedDelivery = await Delivery.findById(delivery._id)
+      .populate('deliveryAgentId', 'firstName lastName phone')
+      .populate('customerId', 'firstName lastName phone')
+      .populate('pharmacyId', 'firstName lastName phone');
 
     res.status(201).json({
       success: true,
       message: 'Delivery assigned successfully',
-      data: delivery
+      data: populatedDelivery
     });
-
   } catch (error) {
-    console.error('Assign delivery error:', error);
+    console.error('Create delivery error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: error.message
     });
   }
 });
 
-// @desc    Get deliveries for agent
-// @route   GET /api/deliveries/my-deliveries
-// @access  Private (Delivery Agent only)
-router.get('/my-deliveries', authenticate, authorize('delivery_agent'), async (req, res) => {
-  try {
-    const { status, page = 1, limit = 10 } = req.query;
-
-    let query = { deliveryAgent: req.user._id };
-    if (status) {
-      query.status = status;
-    }
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const deliveries = await Delivery.find(query)
-      .populate('order', 'orderNumber totalAmount items payment')
-      .populate('customer', 'firstName lastName phone')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Delivery.countDocuments(query);
-
-    res.json({
-      success: true,
-      data: deliveries,
-      pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
-        total,
-        limit: parseInt(limit)
-      }
-    });
-
-  } catch (error) {
-    console.error('Get agent deliveries error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-});
-
-// @desc    Get single delivery
-// @route   GET /api/deliveries/:id
+// @route   GET /api/deliveries
+// @desc    Get deliveries (Admin) or agent's deliveries (Delivery Agent)
 // @access  Private
-router.get('/:id', authenticate, async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
-    const delivery = await Delivery.findById(req.params.id)
-      .populate('deliveryAgent', 'firstName lastName phone vehicleType vehicleNumber')
-      .populate('customer', 'firstName lastName phone address')
-      .populate('order', 'orderNumber totalAmount items payment deliveryAddress');
-
-    if (!delivery) {
-      return res.status(404).json({
-        success: false,
-        message: 'Delivery not found'
-      });
-    }
-
-    // Check access permissions
-    const canAccess = 
-      req.user.role === 'admin' ||
-      req.user.role === 'pharmacist' ||
-      (req.user.role === 'delivery_agent' && delivery.deliveryAgent._id.toString() === req.user._id.toString()) ||
-      (req.user.role === 'customer' && delivery.customer._id.toString() === req.user._id.toString());
-
-    if (!canAccess) {
+    let query = {};
+    
+    // If delivery agent, only show their deliveries
+    if (req.user.role === 'delivery_agent') {
+      query.deliveryAgentId = req.user.id;
+    } else if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
       });
     }
 
+    const { status, page = 1, limit = 10 } = req.query;
+    
+    if (status) {
+      query.status = status;
+    }
+
+    const deliveries = await Delivery.find(query)
+      .populate('deliveryAgentId', 'firstName lastName phone')
+      .populate('customerId', 'firstName lastName phone')
+      .populate('pharmacyId', 'firstName lastName phone')
+      .populate('orderId', 'orderNumber total items')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Delivery.countDocuments(query);
+
     res.json({
       success: true,
-      data: delivery
+      data: {
+        deliveries,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / limit),
+          total
+        }
+      }
     });
-
   } catch (error) {
-    console.error('Get delivery error:', error);
+    console.error('Get deliveries error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: error.message
     });
   }
 });
 
+// @route   PUT /api/deliveries/:id/status
 // @desc    Update delivery status
-// @route   PATCH /api/deliveries/:id/status
-// @access  Private (Delivery Agent only)
-router.patch('/:id/status', authenticate, authorize('delivery_agent'), uploadDeliveryProof, [
-  body('status').isIn(['picked_up', 'in_transit', 'delivered', 'failed', 'returned']).withMessage('Invalid status'),
-  body('notes').optional().isString()
-], async (req, res) => {
+// @access  Private (Delivery Agent for their deliveries, Admin for all)
+router.put('/:id/status', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
+    const { status, notes, latitude, longitude } = req.body;
 
-    const { status, notes, recipientName, paymentCollected, collectedAmount } = req.body;
-    const delivery = await Delivery.findById(req.params.id);
-
+    let delivery = await Delivery.findById(req.params.id);
     if (!delivery) {
       return res.status(404).json({
         success: false,
@@ -244,84 +217,76 @@ router.patch('/:id/status', authenticate, authorize('delivery_agent'), uploadDel
       });
     }
 
-    // Check if agent owns this delivery
-    if (delivery.deliveryAgent.toString() !== req.user._id.toString()) {
+    // Check permissions
+    if (req.user.role === 'delivery_agent' && delivery.deliveryAgentId.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'You can only update your own deliveries'
+        message: 'Access denied'
+      });
+    } else if (req.user.role !== 'admin' && req.user.role !== 'delivery_agent') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
       });
     }
 
-    // Handle delivery proof images
-    if (req.files && req.files.length > 0) {
-      const baseUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
-      delivery.deliveryImages = req.files.map(file => 
-        `${baseUrl}/uploads/delivery/${file.filename}`
-      );
+    // Update location if provided
+    if (latitude && longitude) {
+      await delivery.updateLocation(latitude, longitude);
     }
 
-    // Update delivery details based on status
-    if (status === 'delivered') {
-      delivery.recipientName = recipientName;
-      if (paymentCollected) {
-        delivery.paymentCollected = true;
-        delivery.collectedAmount = collectedAmount || 0;
-      }
-    }
-
+    // Update status
     await delivery.updateStatus(status, notes);
 
-    // Update related order status
-    const order = await Order.findById(delivery.order);
+    // Update order status accordingly
+    const order = await Order.findById(delivery.orderId);
     if (order) {
       if (status === 'picked_up') {
-        await order.updateStatus('out_for_delivery');
+        order.status = 'picked_up';
+      } else if (status === 'in_transit') {
+        order.status = 'in_transit';
       } else if (status === 'delivered') {
-        await order.updateStatus('delivered');
-        // Make agent available again
-        await User.findByIdAndUpdate(delivery.deliveryAgent, { isAvailable: true });
-      } else if (status === 'failed' || status === 'returned') {
-        await order.updateStatus('cancelled');
-        // Make agent available again
-        await User.findByIdAndUpdate(delivery.deliveryAgent, { isAvailable: true });
+        order.status = 'delivered';
+        order.deliveredAt = new Date();
       }
+      await order.save();
     }
+
+    const updatedDelivery = await Delivery.findById(delivery._id)
+      .populate('deliveryAgentId', 'firstName lastName phone')
+      .populate('customerId', 'firstName lastName phone')
+      .populate('pharmacyId', 'firstName lastName phone');
 
     res.json({
       success: true,
       message: 'Delivery status updated successfully',
-      data: delivery
+      data: updatedDelivery
     });
-
   } catch (error) {
     console.error('Update delivery status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: error.message
     });
   }
 });
 
-// @desc    Update location
-// @route   PATCH /api/deliveries/:id/location
-// @access  Private (Delivery Agent only)
-router.patch('/:id/location', authenticate, authorize('delivery_agent'), [
-  body('latitude').isNumeric().withMessage('Valid latitude is required'),
-  body('longitude').isNumeric().withMessage('Valid longitude is required')
-], async (req, res) => {
+// @route   PUT /api/deliveries/:id/location
+// @desc    Update delivery agent location
+// @access  Private (Delivery Agent)
+router.put('/:id/location', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
       return res.status(400).json({
         success: false,
-        message: 'Validation errors',
-        errors: errors.array()
+        message: 'Latitude and longitude are required'
       });
     }
 
-    const { latitude, longitude } = req.body;
     const delivery = await Delivery.findById(req.params.id);
-
     if (!delivery) {
       return res.status(404).json({
         success: false,
@@ -329,147 +294,42 @@ router.patch('/:id/location', authenticate, authorize('delivery_agent'), [
       });
     }
 
-    // Check if agent owns this delivery
-    if (delivery.deliveryAgent.toString() !== req.user._id.toString()) {
+    // Check if user is the assigned delivery agent
+    if (req.user.role !== 'delivery_agent' || delivery.deliveryAgentId.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'You can only update your own deliveries'
+        message: 'Access denied'
       });
     }
 
     await delivery.updateLocation(latitude, longitude);
 
-    // Also update agent's current location
-    await User.findByIdAndUpdate(req.user._id, {
-      'currentLocation.latitude': latitude,
-      'currentLocation.longitude': longitude,
-      'currentLocation.lastUpdated': new Date()
-    });
-
     res.json({
       success: true,
-      message: 'Location updated successfully'
-    });
-
-  } catch (error) {
-    console.error('Update location error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-});
-
-// @desc    Get delivery tracking for customer
-// @route   GET /api/deliveries/track/:orderNumber
-// @access  Public (with order number)
-router.get('/track/:orderNumber', async (req, res) => {
-  try {
-    const { orderNumber } = req.params;
-
-    const order = await Order.findOne({ orderNumber });
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: 'Order not found'
-      });
-    }
-
-    const delivery = await Delivery.findOne({ order: order._id })
-      .populate('deliveryAgent', 'firstName lastName phone vehicleType')
-      .select('status currentLocation estimatedDeliveryTime pickedUpAt deliveredAt');
-
-    if (!delivery) {
-      return res.json({
-        success: true,
-        message: 'Delivery not yet assigned',
-        data: {
-          orderStatus: order.status,
-          deliveryStatus: 'not_assigned'
-        }
-      });
-    }
-
-    res.json({
-      success: true,
+      message: 'Location updated successfully',
       data: {
-        orderStatus: order.status,
-        delivery: delivery
+        currentLocation: delivery.currentLocation
       }
     });
-
   } catch (error) {
-    console.error('Track delivery error:', error);
+    console.error('Update delivery location error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: error.message
     });
   }
 });
 
-// @desc    Get delivery statistics
-// @route   GET /api/deliveries/stats
-// @access  Private (Admin/Pharmacist only)
-router.get('/meta/stats', authenticate, authorize('admin', 'pharmacist'), async (req, res) => {
+// @route   GET /api/deliveries/:id/track
+// @desc    Track delivery (Customer can track their delivery, Admin can track all)
+// @access  Private
+router.get('/:id/track', auth, async (req, res) => {
   try {
-    const stats = await Delivery.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const totalDeliveries = await Delivery.countDocuments();
-    const activeAgents = await User.countDocuments({
-      role: 'delivery_agent',
-      isActive: true
-    });
-    const availableAgents = await User.countDocuments({
-      role: 'delivery_agent',
-      isActive: true,
-      isAvailable: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        totalDeliveries,
-        activeAgents,
-        availableAgents,
-        statusBreakdown: stats
-      }
-    });
-
-  } catch (error) {
-    console.error('Get delivery stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-});
-
-// @desc    Rate delivery
-// @route   POST /api/deliveries/:id/rate
-// @access  Private (Customer only)
-router.post('/:id/rate', authenticate, authorize('customer'), [
-  body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-  body('feedback').optional().isString()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
-
-    const { rating, feedback } = req.body;
-    const delivery = await Delivery.findById(req.params.id);
+    const delivery = await Delivery.findById(req.params.id)
+      .populate('deliveryAgentId', 'firstName lastName phone')
+      .populate('customerId', 'firstName lastName')
+      .populate('orderId', 'orderNumber');
 
     if (!delivery) {
       return res.status(404).json({
@@ -478,36 +338,43 @@ router.post('/:id/rate', authenticate, authorize('customer'), [
       });
     }
 
-    if (delivery.customer.toString() !== req.user._id.toString()) {
+    // Check permissions - customer can only track their own delivery
+    if (req.user.role === 'customer' && delivery.customerId._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'You can only rate your own deliveries'
+        message: 'Access denied'
       });
     }
 
-    if (delivery.status !== 'delivered') {
-      return res.status(400).json({
-        success: false,
-        message: 'You can only rate completed deliveries'
-      });
-    }
-
-    delivery.rating = rating;
-    delivery.feedback = feedback;
-    await delivery.save();
+    // Return tracking information
+    const trackingData = {
+      deliveryId: delivery._id,
+      orderNumber: delivery.orderId.orderNumber,
+      status: delivery.status,
+      estimatedTime: delivery.estimatedTime,
+      distance: delivery.distance,
+      deliveryAgent: delivery.deliveryAgentId,
+      pickupLocation: delivery.pickupLocation,
+      deliveryLocation: delivery.deliveryLocation,
+      currentLocation: delivery.currentLocation,
+      assignedAt: delivery.assignedAt,
+      pickedUpAt: delivery.pickedUpAt,
+      deliveredAt: delivery.deliveredAt,
+      routeData: delivery.routeData
+    };
 
     res.json({
       success: true,
-      message: 'Delivery rated successfully'
+      data: trackingData
     });
-
   } catch (error) {
-    console.error('Rate delivery error:', error);
+    console.error('Track delivery error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: error.message
     });
   }
 });
 
-module.exports = router; 
+module.exports = router;

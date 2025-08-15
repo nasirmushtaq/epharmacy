@@ -61,13 +61,43 @@ const addressSchema = new mongoose.Schema({
   location: {
     latitude: {
       type: Number,
+      required: true,
       min: -90,
       max: 90
     },
     longitude: {
       type: Number,
+      required: true,
       min: -180,
       max: 180
+    },
+    accuracy: {
+      type: Number, // GPS accuracy in meters
+      min: 0
+    },
+    source: {
+      type: String,
+      enum: ['gps', 'network', 'manual', 'openroute_service'],
+      default: 'manual'
+    }
+  },
+  
+  // OpenRouteService Integration
+  openRouteData: {
+    id: String, // OpenRouteService feature ID
+    label: String, // Formatted address label
+    confidence: Number, // Geocoding confidence score
+    layer: String, // Layer type (address, street, venue, etc.)
+    source: String, // Data source
+    address: {
+      name: String,
+      street: String,
+      housenumber: String,
+      neighbourhood: String,
+      locality: String,
+      region: String,
+      country: String,
+      postalcode: String
     }
   },
   isDefault: {
@@ -111,6 +141,45 @@ addressSchema.virtual('fullAddress').get(function() {
   if (this.landmark) parts.push(`Near ${this.landmark}`);
   parts.push(`${this.city}, ${this.state} ${this.zipCode}`);
   return parts.join(', ');
+});
+
+// Calculate distance to another address
+addressSchema.methods.distanceTo = function(otherAddress) {
+  if (!this.location?.latitude || !this.location?.longitude || 
+      !otherAddress.location?.latitude || !otherAddress.location?.longitude) {
+    return null;
+  }
+  
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (otherAddress.location.latitude - this.location.latitude) * Math.PI / 180;
+  const dLon = (otherAddress.location.longitude - this.location.longitude) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(this.location.latitude * Math.PI / 180) * Math.cos(otherAddress.location.latitude * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c;
+  return Math.round(distance * 100) / 100; // Round to 2 decimal places
+};
+
+// Check if address is within Srinagar city limits
+addressSchema.methods.isWithinSrinagar = function() {
+  if (!this.location?.latitude || !this.location?.longitude) {
+    return false;
+  }
+  
+  const openRouteService = require('../config/openroute');
+  return openRouteService.isWithinSrinagar(this.location.latitude, this.location.longitude);
+};
+
+// Validate if coordinates match the city
+addressSchema.pre('save', function(next) {
+  if (this.location?.latitude && this.location?.longitude) {
+    if (!this.isWithinSrinagar()) {
+      return next(new Error('Address coordinates must be within Srinagar city limits'));
+    }
+  }
+  next();
 });
 
 // Ensure virtuals are included in JSON output
