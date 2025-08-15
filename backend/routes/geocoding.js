@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const openRouteService = require('../config/openroute');
-const auth = require('../middleware/auth');
+const { authenticate: auth } = require('../middleware/auth');
 
 // @route   GET /api/geocoding/search
 // @desc    Search for addresses using OpenRouteService

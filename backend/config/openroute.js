@@ -241,12 +241,12 @@ class OpenRouteService {
    * @returns {boolean} True if within Kashmir region
    */
   isWithinKashmir(lat, lng) {
-    // Extended Kashmir region boundaries (including entire Kashmir valley and surrounding areas)
+    // Extended Kashmir region boundaries (including entire J&K and Ladakh)
     const kashmirBounds = {
-      north: 36.0,    // Northern Kashmir (near LOC)
-      south: 32.5,    // Southern Kashmir (Jammu region)
-      east: 76.5,     // Eastern Kashmir (Ladakh region) 
-      west: 73.5      // Western Kashmir (near Pakistan border)
+      north: 37.0,    // Northern Kashmir (near LOC, including Gilgit-Baltistan region)
+      south: 32.3,    // Southern Kashmir (Jammu region including Kathua)
+      east: 78.5,     // Eastern Kashmir (entire Ladakh region including Daulat Beg Oldi)
+      west: 73.0      // Western Kashmir (near Pakistan border)
     };
 
     return (

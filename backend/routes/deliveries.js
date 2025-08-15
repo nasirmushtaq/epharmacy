@@ -3,7 +3,7 @@ const router = express.Router();
 const Delivery = require('../models/Delivery');
 const Order = require('../models/Order');
 const User = require('../models/User');
-const auth = require('../middleware/auth');
+const { authenticate: auth } = require('../middleware/auth');
 
 // @route   POST /api/deliveries
 // @desc    Create a new delivery for an order
