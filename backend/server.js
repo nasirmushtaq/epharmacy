@@ -77,6 +77,7 @@ app.use(cors({
   origin: config.allowAllOrigins
     ? true
     : function (origin, callback) {
+        // Allow requests without origin (mobile apps, Postman, etc.)
         if (!origin) return callback(null, true);
         if (allowedOrigins.has(origin)) return callback(null, true);
         console.log(`CORS blocked origin: ${origin}`);
