@@ -3,6 +3,8 @@ const https = require('https');
 const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
 const Order = require('../models/Order'); // Added import for Order model
+const User = require('../models/User'); // Added import for User model
+const emailService = require('../services/emailService'); // Added import for email service
 
 const router = express.Router();
 
