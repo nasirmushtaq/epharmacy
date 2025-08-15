@@ -3,7 +3,7 @@ import { View, FlatList, RefreshControl, StyleSheet, Alert, Linking } from 'reac
 import { Text, Button, Card, ActivityIndicator, Chip, Surface, SegmentedButtons, Modal, Portal } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * * Location from 'expo-location';
+import * as Location from 'expo-location';
 import api from '../../services/api';
 
 interface AvailableOrder {
@@ -126,8 +126,8 @@ const DeliveryAgentDashboard = () => {
     },
     onSuccess: () => {
       Alert.alert('Success', 'Order assigned successfully!');
-      queryClient.invalidateQueries(['availableOrders']);
-      queryClient.invalidateQueries(['assignedDeliveries']);
+      queryClient.invalidateQueries({ queryKey: ['availableOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['assignedDeliveries'] });
       setActiveTab('assigned'); // Switch to assigned tab
     },
     onError: (error: any) => {
@@ -205,8 +205,8 @@ const DeliveryAgentDashboard = () => {
           <Button 
             mode="contained" 
             onPress={() => handleAssignSelf(order._id, order.orderNumber)}
-            loading={assignSelfMutation.isLoading}
-            disabled={assignSelfMutation.isLoading}
+            loading={assignSelfMutation.isPending}
+            disabled={assignSelfMutation.isPending}
             style={styles.assignButton}
           >
             Assign to Me
@@ -379,7 +379,7 @@ const DeliveryAgentDashboard = () => {
 
       <FlatList
         data={data}
-        renderItem={activeTab === 'available' ? renderAvailableOrderCard : renderDeliveryCard}
+        renderItem={({ item }) => activeTab === 'available' ? renderAvailableOrderCard({ item: item as AvailableOrder }) : renderDeliveryCard({ item: item as DeliveryOrder })}
         keyExtractor={(item) => item._id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
@@ -409,6 +409,49 @@ const DeliveryAgentDashboard = () => {
           </Surface>
         }
       />
+
+      {/* Status Update Modal */}
+      <Portal>
+        <Modal
+          visible={showStatusModal}
+          onDismiss={() => setShowStatusModal(false)}
+          contentContainerStyle={styles.modalContent}
+        >
+          <Text style={styles.modalTitle}>Update Delivery Status</Text>
+          <Text style={styles.modalSubtitle}>
+            Order: {selectedDelivery?.orderId?.orderNumber}
+          </Text>
+          
+          <View style={styles.statusButtonsContainer}>
+            {statusOptions.map((option) => (
+              <Button
+                key={option.value}
+                mode="contained"
+                style={[styles.statusButton, { backgroundColor: option.color }]}
+                onPress={() => {
+                  if (selectedDelivery) {
+                    updateStatusMutation.mutate({
+                      deliveryId: selectedDelivery._id,
+                      status: option.value
+                    });
+                  }
+                }}
+                loading={updateStatusMutation.isPending}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </View>
+
+          <Button
+            mode="outlined"
+            onPress={() => setShowStatusModal(false)}
+            style={styles.modalCancelButton}
+          >
+            Cancel
+          </Button>
+        </Modal>
+      </Portal>
     </View>
   );
 };
@@ -532,6 +575,33 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 8,
     textAlign: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: 20,
+    margin: 20,
+    borderRadius: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    color: '#666',
+    marginBottom: 20,
+  },
+  statusButtonsContainer: {
+    marginBottom: 20,
+  },
+  statusButton: {
+    marginVertical: 4,
+  },
+  modalCancelButton: {
+    marginTop: 10,
   },
 });
 
