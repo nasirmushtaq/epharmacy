@@ -38,7 +38,8 @@
       "eas": {
         "projectId": "c6fc5c2d-3895-4b2e-b6b5-85f7acc48826"
       },
-      "apiBaseUrl": "https://epharmacy-production.up.railway.app"
+      "apiBaseUrl": "https://epharmacy-production.up.railway.app",
+      "EXPO_PUBLIC_ENABLE_LOCATION_CAPTURE": "true"
     },
     "owner": "nasir94"
   }

@@ -9,6 +9,7 @@ const Test = require('../models/Test');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 const crypto = require('crypto');
+const emailService = require('../services/emailService');
 
 const router = express.Router();
 const https = require('https');
@@ -281,6 +282,16 @@ router.post('/', authenticate, [
     const order = await Order.create(newOrder);
     await order.populate(getPopulateFields(orderType));
 
+    // Send order confirmation email
+    try {
+      const customer = await User.findById(req.user._id);
+      await emailService.sendOrderConfirmationEmail(order, customer);
+      console.log(`✅ Order confirmation email sent to ${customer.email}`);
+    } catch (error) {
+      console.error('❌ Failed to send order confirmation email:', error.message);
+      // Don't fail order creation if email fails
+    }
+
     // Do not auto-assign pharmacy on creation; pharmacists can claim/confirm later
 
     console.log(`[ORDERS] Order created: ${order.orderNumber} (${orderType})`);
@@ -543,6 +554,16 @@ router.patch('/:id/status', authenticate, async (req, res) => {
     }
 
     await order.save();
+
+    // Send status update email to customer
+    try {
+      const customer = await User.findById(order.customer);
+      await emailService.sendOrderStatusUpdateEmail(order, customer, status);
+      console.log(`✅ Status update email sent to ${customer.email}`);
+    } catch (error) {
+      console.error('❌ Failed to send status update email:', error.message);
+      // Don't fail status update if email fails
+    }
     
     console.log(`[ORDERS] Status updated: ${order.orderNumber} -> ${status}`);
     res.json({ success: true, data: order });

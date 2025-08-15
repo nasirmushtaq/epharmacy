@@ -61,13 +61,13 @@ const addressSchema = new mongoose.Schema({
   location: {
     latitude: {
       type: Number,
-      required: true,
+      required: false, // Made optional since location capture might not always be available
       min: -90,
       max: 90
     },
     longitude: {
       type: Number,
-      required: true,
+      required: false, // Made optional since location capture might not always be available
       min: -180,
       max: 180
     },
@@ -172,14 +172,16 @@ addressSchema.methods.isWithinSrinagar = function() {
   return openRouteService.isWithinSrinagar(this.location.latitude, this.location.longitude);
 };
 
-// Validate if coordinates match the city (only when feature flag is enabled)
+// Validate if coordinates match the city (only when feature flag is enabled and location is provided)
 addressSchema.pre('save', function(next) {
+  // Only validate location if both latitude and longitude are provided
   if (this.location?.latitude && this.location?.longitude) {
     const config = require('../config/config');
     if (config.featureFlags.enforceLocationRestrictions && !this.isWithinSrinagar()) {
       return next(new Error('Address coordinates must be within Srinagar city limits'));
     }
   }
+  // If no location provided, skip validation (location is optional)
   next();
 });
 

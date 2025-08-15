@@ -25,6 +25,7 @@ const doctorRoutes = require('./routes/doctors');
 const testRoutes = require('./routes/tests');
 const paymentRoutes = require('./routes/payments');
 const addressRoutes = require('./routes/addresses');
+const emailTestRoutes = require('./routes/emailTest');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -129,6 +130,7 @@ app.use('/api/tests', testRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/addresses', addressRoutes);
+app.use('/api/email', emailTestRoutes);
 
 // Handle 404 errors
 app.use('*', (req, res) => {

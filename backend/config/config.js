@@ -42,7 +42,28 @@ const config = {
     ttlMin: parseInt(process.env.OTP_TTL_MIN || '10', 10),
   },
 
-  // Mail (SMTP)
+  // Email configuration
+  email: {
+    // Primary: Resend (3000 emails/month free)
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    
+    // Fallback: Gmail SMTP (unlimited for personal use)
+    gmail: {
+      user: process.env.GMAIL_USER || '',
+      password: process.env.GMAIL_APP_PASSWORD || '', // Use App Password, not regular password
+    },
+    
+    // Sender configuration
+    fromAddress: process.env.EMAIL_FROM || 'noreply@epharmacy.local',
+  },
+
+  // App configuration
+  app: {
+    name: process.env.APP_NAME || 'ePharmacy',
+    supportEmail: process.env.SUPPORT_EMAIL || 'support@epharmacy.local',
+  },
+
+  // Legacy mail config (kept for compatibility)
   mail: {
     host: process.env.MAIL_HOST || '',
     port: parseInt(process.env.MAIL_PORT || '587', 10),

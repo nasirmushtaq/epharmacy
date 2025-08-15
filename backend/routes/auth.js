@@ -4,20 +4,8 @@ const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 const { uploadProfileImage } = require('../middleware/upload');
 const config = require('../config/config');
-const nodemailer = require('nodemailer');
-let mailer = null;
-if (config.mail.host && config.mail.user) {
-  mailer = nodemailer.createTransport({
-    host: config.mail.host,
-    port: config.mail.port,
-    secure: config.mail.secure,
-    auth: { user: config.mail.user, pass: config.mail.pass }
-  });
-}
-let twilioClient = null;
-if (config.sms.twilioSid && config.sms.twilioAuth) {
-  twilioClient = require('twilio')(config.sms.twilioSid, config.sms.twilioAuth);
-}
+const emailService = require('../services/emailService');
+// Legacy email/SMS handling removed in favor of emailService
 
 const router = express.Router();
 
@@ -167,23 +155,23 @@ router.post('/register', uploadProfileImage, [
     // Create user
     const user = await User.create(userData);
 
-    // Create an OTP record (fallback dummy)
-    const code = config.otp.dummy;
+    // Generate OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
     user.otp = {
       code,
-      channel: user.email ? 'email' : 'phone',
-      expireAt: new Date(Date.now() + config.otp.ttlMin * 60 * 1000)
+      channel: 'email',
+      expireAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
     };
     await user.save();
 
-    // Attempt to send via email/SMS (best-effort)
+    // Send OTP via email
     try {
-      if (mailer && user.email) {
-        await mailer.sendMail({ from: config.mail.from, to: user.email, subject: 'Your OTP Code', text: `Your OTP code is ${code}` });
-      } else if (twilioClient && user.phone && config.sms.from) {
-        await twilioClient.messages.create({ to: user.phone, from: config.sms.from, body: `Your OTP code is ${code}` });
-      }
-    } catch {}
+      await emailService.sendOTPEmail(user.email, code, user.firstName);
+      console.log(`✅ OTP email sent to ${user.email}`);
+    } catch (error) {
+      console.error('❌ Failed to send OTP email:', error.message);
+      // Don't fail registration if email fails
+    }
 
     res.status(201).json({
       success: true,
@@ -278,16 +266,17 @@ router.post('/request-otp', [
     const { email, phone } = req.body;
     const user = await User.findOne(email ? { email: email.toLowerCase() } : { phone });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    const code = config.otp.dummy;
-    user.otp = { code, channel: email ? 'email' : 'phone', expireAt: new Date(Date.now() + config.otp.ttlMin * 60 * 1000) };
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+    user.otp = { code, channel: email ? 'email' : 'phone', expireAt: new Date(Date.now() + 10 * 60 * 1000) };
     await user.save();
     try {
-      if (mailer && email) {
-        await mailer.sendMail({ from: config.mail.from, to: email.toLowerCase(), subject: 'Your OTP Code', text: `Your OTP code is ${code}` });
-      } else if (twilioClient && phone && config.sms.from) {
-        await twilioClient.messages.create({ to: phone, from: config.sms.from, body: `Your OTP code is ${code}` });
+      if (email) {
+        await emailService.sendOTPEmail(email.toLowerCase(), code, user.firstName);
+        console.log(`✅ OTP email sent to ${email}`);
       }
-    } catch {}
+    } catch (error) {
+      console.error('❌ Failed to send OTP email:', error.message);
+    }
     res.json({ success: true, message: 'OTP sent', data: { otpChannel: user.otp.channel } });
   } catch (e) {
     res.status(500).json({ success: false, message: 'Server error' });
