@@ -459,6 +459,22 @@ router.post('/cashfree/webhook', async (req, res) => {
           if (updated) {
             await order.save();
             console.log(`[PAYMENTS][CF][WEBHOOK] Order ${order.orderNumber} payment status updated to ${status}`);
+            
+            // Send order confirmation email ONLY after successful payment
+            if (status === 'paid') {
+              try {
+                const customer = await User.findById(order.customer);
+                if (emailService && emailService.sendOrderConfirmationEmail) {
+                  await emailService.sendOrderConfirmationEmail(order, customer);
+                  console.log(`✅ Order confirmation email sent to ${customer.email} after Cashfree payment confirmation`);
+                } else {
+                  console.log(`⚠️ Email service not configured, order ${order.orderNumber} payment confirmed for ${customer.email}`);
+                }
+              } catch (error) {
+                console.error('❌ Failed to send order confirmation email after Cashfree payment:', error.message);
+                // Don't fail webhook processing if email fails
+              }
+            }
           } else {
             console.log(`[PAYMENTS][CF][WEBHOOK] Payment status update rejected for order ${order.orderNumber}`);
           }
