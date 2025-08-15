@@ -523,20 +523,16 @@ const CartScreen = () => {
 
   const handleStartShopping = () => {
     console.log('🛒 Start Shopping button clicked!');
-    Alert.alert('Navigation', 'Going to Medicines tab...', [
-      {
-        text: 'OK',
-        onPress: () => {
-          try {
-            const globalNav = (global as any)?.navigation;
-            if (globalNav && globalNav.navigate) {
-              console.log('Navigating to Medicines...');
-              globalNav.navigate('Medicines');
-            } else {
-              console.log('No navigation available, fallback message');
-              Alert.alert('Info', 'Please use the Medicines tab at the bottom to browse products.');
-            }
-          } catch (error) {
+    try {
+      // Use proper React Navigation
+      if (navigation && navigation.navigate) {
+        console.log('✅ Navigating to Medicines tab');
+        navigation.navigate('Medicines');
+      } else {
+        console.log('⚠️ Navigation not available, showing fallback');
+        Alert.alert('Info', 'Please use the Medicines tab at the bottom to browse products.');
+      }
+    } catch (error) {
             console.error('Navigation error:', error);
           }
         }

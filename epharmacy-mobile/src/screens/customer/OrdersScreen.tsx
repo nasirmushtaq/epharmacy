@@ -20,6 +20,7 @@ import {
 } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
+import { useCart } from '../../contexts/CartContext';
 
 interface OrderItem {
   id: string;
@@ -121,9 +122,27 @@ const OrdersScreen = () => {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Add to Cart', onPress: async () => {
           try {
-            await api.post(`/api/orders/${order._id}/reorder`);
-            Alert.alert('Success', 'Items added to cart!');
+            console.log('🔄 Starting reorder for order:', order._id);
+            const response = await api.post(`/api/orders/${order._id}/reorder`);
+            const { items = [] } = response.data.data || {};
+            
+            console.log('📦 Reorder items received:', items.length);
+            
+            // Add each item to cart using cart context
+            for (const item of items) {
+              await cartContext.addItem({
+                medicineId: item.medicineId,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                isPrescriptionRequired: item.isPrescriptionRequired
+              });
+            }
+            
+            console.log('✅ All items added to cart');
+            Alert.alert('Success', `${items.length} items added to cart!`);
           } catch (error) {
+            console.error('❌ Reorder failed:', error);
             Alert.alert('Error', 'Failed to add items to cart');
           }
         }}
