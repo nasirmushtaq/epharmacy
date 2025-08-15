@@ -404,6 +404,126 @@ router.get('/cashfree/checkout-page', (req, res) => {
   console.log('[PAYMENTS][CF][CHECKOUT_PAGE][RES] html sent');
 });
 
+// Manual payment verification endpoint (for when webhooks fail)
+router.post('/cashfree/verify/:orderId', authenticate, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    // Find order in database
+    const order = await Order.findOne({
+      $or: [
+        { 'payment.gatewayOrderId': orderId },
+        { orderNumber: orderId }
+      ]
+    });
+    
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    
+    // Check payment status with Cashfree API
+    const appId = process.env.CASHFREE_APP_ID;
+    const secret = process.env.CASHFREE_SECRET_KEY;
+    const env = process.env.CASHFREE_ENVIRONMENT || process.env.CASHFREE_ENV || 'SANDBOX';
+    
+    if (!appId || !secret) {
+      return res.status(500).json({ success: false, message: 'Cashfree not configured' });
+    }
+    
+    const baseUrl = env === 'PRODUCTION' 
+      ? 'https://api.cashfree.com/pg' 
+      : 'https://sandbox.cashfree.com/pg';
+    
+    const https = require('https');
+    const statusCheck = new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: env === 'PRODUCTION' ? 'api.cashfree.com' : 'sandbox.cashfree.com',
+        path: `/pg/orders/${encodeURIComponent(orderId)}`,
+        method: 'GET',
+        headers: {
+          'x-api-version': '2023-08-01',
+          'x-client-id': appId,
+          'x-client-secret': secret,
+          'Content-Type': 'application/json'
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            resolve({ statusCode: res.statusCode, data: result });
+          } catch (e) {
+            reject(new Error(`Invalid JSON response: ${data}`));
+          }
+        });
+      });
+      
+      req.on('error', reject);
+      req.end();
+    });
+    
+    const result = await statusCheck;
+    
+    if (result.statusCode === 200) {
+      const cfOrder = result.data;
+      const paymentStatus = cfOrder.order_status; // 'PAID', 'ACTIVE', 'EXPIRED', etc.
+      
+      if (paymentStatus === 'PAID') {
+        // Update order status to paid
+        const updated = order.updatePaymentStatus('paid', 'manual_verify', {
+          cashfreeStatus: paymentStatus,
+          verifiedAt: new Date().toISOString(),
+          verifiedBy: req.user._id
+        });
+        
+        if (updated) {
+          await order.save();
+          
+          // Send order confirmation email
+          try {
+            const customer = await User.findById(order.customer);
+            if (emailService && emailService.sendOrderConfirmationEmail) {
+              await emailService.sendOrderConfirmationEmail(order, customer);
+              console.log(`✅ Order confirmation email sent after manual verification`);
+            }
+          } catch (error) {
+            console.error('❌ Failed to send order confirmation email:', error.message);
+          }
+          
+          res.json({ 
+            success: true, 
+            message: 'Payment verified and order updated',
+            order: { 
+              id: order._id, 
+              status: order.status,
+              paymentStatus: order.payment.status 
+            }
+          });
+        } else {
+          res.status(400).json({ success: false, message: 'Payment status update failed' });
+        }
+      } else {
+        res.json({ 
+          success: false, 
+          message: `Payment not completed. Status: ${paymentStatus}`,
+          cashfreeStatus: paymentStatus
+        });
+      }
+    } else {
+      res.status(result.statusCode).json({ 
+        success: false, 
+        message: 'Failed to verify payment with Cashfree',
+        error: result.data
+      });
+    }
+    
+  } catch (error) {
+    console.error('[PAYMENTS][CF][VERIFY] Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Cashfree webhook endpoint
 router.post('/cashfree/webhook', async (req, res) => {
   try {
