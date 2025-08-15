@@ -26,7 +26,7 @@ class EmailService {
 
       // Initialize Gmail SMTP (Fallback - unlimited for personal use)
       if (nodemailer && config.email.gmail.user && config.email.gmail.password) {
-        this.gmailTransporter = nodemailer.createTransporter({
+        this.gmailTransporter = nodemailer.createTransport({
           service: 'gmail',
           auth: {
             user: config.email.gmail.user,
