@@ -4,13 +4,23 @@ const Prescription = require('../models/Prescription');
 const Medicine = require('../models/Medicine');
 const { authenticate, authorize, checkPharmacistLicense } = require('../middleware/auth');
 const { uploadPrescription, getFileUrl } = require('../middleware/upload');
+const { 
+  uploadToS3, 
+  getSignedDownloadUrl, 
+  createS3Multer, 
+  generateFileName, 
+  isS3Configured 
+} = require('../config/s3');
 
 const router = express.Router();
+
+// Create S3 multer instance
+const s3Upload = createS3Multer();
 
 // @desc    Upload prescription
 // @route   POST /api/prescriptions
 // @access  Private (Customer only)
-router.post('/', authenticate, authorize('customer'), uploadPrescription, [
+router.post('/', authenticate, authorize('customer'), s3Upload.array('documents', 5), [
   body('doctorName').trim().notEmpty().withMessage('Doctor name is required'),
   body('doctorRegistrationNumber').trim().notEmpty().withMessage('Doctor registration number is required'),
   body('patientName').trim().notEmpty().withMessage('Patient name is required'),
@@ -41,6 +51,44 @@ router.post('/', authenticate, authorize('customer'), uploadPrescription, [
     // Generate unique prescription number
     const prescriptionNumber = 'RX' + Date.now() + Math.random().toString(36).substr(2, 4).toUpperCase();
 
+    // Process uploaded files
+    const documents = [];
+    
+    if (isS3Configured()) {
+      // Upload to S3
+      console.log('📤 Uploading prescription documents to S3...');
+      for (const file of req.files) {
+        try {
+          const fileName = generateFileName(file.originalname, 'prescriptions');
+          const uploadResult = await uploadToS3(file, fileName);
+          
+          documents.push({
+            url: uploadResult.location,
+            s3Key: uploadResult.key,
+            originalName: uploadResult.originalName,
+            mimetype: uploadResult.mimetype,
+            size: uploadResult.size,
+            storageType: 's3'
+          });
+          
+          console.log(`✅ Uploaded ${file.originalname} to S3: ${uploadResult.key}`);
+        } catch (uploadError) {
+          console.error(`❌ Failed to upload ${file.originalname}:`, uploadError);
+          throw new Error(`Failed to upload ${file.originalname}: ${uploadError.message}`);
+        }
+      }
+    } else {
+      // Fallback to local storage (for development)
+      console.log('📁 Using local file storage (S3 not configured)');
+      documents.push(...req.files.map(file => ({
+        url: getFileUrl(req, file.filename, 'prescriptions'),
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        storageType: 'local'
+      })));
+    }
+
     // Prepare prescription data
     const prescriptionData = {
       prescriptionNumber,
@@ -57,12 +105,7 @@ router.post('/', authenticate, authorize('customer'), uploadPrescription, [
       validUntil: req.body.validUntil,
       notes: req.body.notes || '',
       customer: req.user._id,
-      documents: req.files.map(file => ({
-        url: getFileUrl(req, file.filename, 'prescriptions'),
-        originalName: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size
-      }))
+      documents
     };
 
     // Create prescription
@@ -453,6 +496,88 @@ router.post('/:id/communication', authenticate, [
 
   } catch (error) {
     console.error('Add communication error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// @desc    Get prescription document (S3 signed URL)
+// @route   GET /api/prescriptions/:id/document/:documentIndex
+// @access  Private
+router.get('/:id/document/:documentIndex', authenticate, async (req, res) => {
+  try {
+    const { id, documentIndex } = req.params;
+    const prescription = await Prescription.findById(id);
+
+    if (!prescription) {
+      return res.status(404).json({
+        success: false,
+        message: 'Prescription not found'
+      });
+    }
+
+    // Check access permissions
+    const canAccess = 
+      req.user.role === 'admin' ||
+      req.user.role === 'pharmacist' ||
+      (req.user.role === 'customer' && prescription.customer.toString() === req.user._id.toString());
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    const docIndex = parseInt(documentIndex);
+    if (docIndex < 0 || docIndex >= prescription.documents.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid document index'
+      });
+    }
+
+    const document = prescription.documents[docIndex];
+
+    if (document.storageType === 's3' && document.s3Key) {
+      try {
+        // Generate signed URL for S3 object (valid for 1 hour)
+        const signedUrl = await getSignedDownloadUrl(document.s3Key, 3600);
+        
+        return res.json({
+          success: true,
+          data: {
+            url: signedUrl,
+            originalName: document.originalName,
+            mimetype: document.mimetype,
+            size: document.size,
+            expiresIn: 3600
+          }
+        });
+      } catch (error) {
+        console.error('Error generating signed URL:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to generate download URL'
+        });
+      }
+    } else {
+      // Local file - return direct URL
+      return res.json({
+        success: true,
+        data: {
+          url: document.url,
+          originalName: document.originalName,
+          mimetype: document.mimetype,
+          size: document.size
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Get prescription document error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'

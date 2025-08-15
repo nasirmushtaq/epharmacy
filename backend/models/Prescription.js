@@ -18,9 +18,18 @@ const prescriptionSchema = new mongoose.Schema({
       type: String,
       required: true
     },
+    s3Key: {
+      type: String,
+      // S3 key for secure file access, only present if stored in S3
+    },
     originalName: String,
     mimetype: String,
     size: Number,
+    storageType: {
+      type: String,
+      enum: ['local', 's3'],
+      default: 'local'
+    },
     uploadDate: {
       type: Date,
       default: Date.now

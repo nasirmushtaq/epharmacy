@@ -11,6 +11,11 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Local environment configuration
+environments.local
+*.local
+config.local
+
 # Backend specific
 backend/uploads/
 backend/logs/

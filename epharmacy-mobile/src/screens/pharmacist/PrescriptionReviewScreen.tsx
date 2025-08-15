@@ -173,10 +173,10 @@ const PrescriptionReviewScreen = () => {
               {p.documents.map((document, index) => (
                 <TouchableOpacity
                   key={index}
-                  onPress={() => openDocument(document.url)}
+                  onPress={() => openDocument(p._id, index, document.mimetype)}
                   style={styles.documentItem}
                 >
-                  {document.url.match(/\.(jpg|jpeg|png|gif|bmp)$/i) ? (
+                  {(document.mimetype?.includes('image') || document.url?.match(/\.(jpg|jpeg|png|gif|bmp)$/i)) ? (
                     <Image
                       source={{ uri: getAbsoluteUrl(document.url) }}
                       style={styles.documentImage}
