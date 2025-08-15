@@ -696,6 +696,9 @@ router.post('/:id/reorder', authenticate, async (req, res) => {
     if (order.customer.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'You can only reorder your own orders' });
     }
+    
+    console.log(`[REORDER] Order ${req.params.id} has ${order.items?.length || 0} items`);
+    
     const items = [];
     const unavailable = [];
     const adjusted = [];
@@ -703,12 +706,23 @@ router.post('/:id/reorder', authenticate, async (req, res) => {
     for (const it of (order.items || [])) {
       const med = it.medicine;
       const medId = med?._id?.toString() || it.medicine?.toString();
-      if (!medId) continue;
+      console.log(`[REORDER] Processing item: medId=${medId}, medicine=`, med ? { name: med.name, isActive: med.isActive, isAvailable: med.isAvailable, stockQuantity: med.stockQuantity } : 'NOT_POPULATED');
+      
+      if (!medId) {
+        console.log(`[REORDER] Skipping item - no medicine ID`);
+        continue;
+      }
+      
       const isActive = med?.isActive !== false;
       const isAvailable = med?.isAvailable !== false;
       const stockQty = typeof med?.stockQuantity === 'number' ? med.stockQuantity : 0;
+      
+      console.log(`[REORDER] Medicine ${medId} availability: active=${isActive}, available=${isAvailable}, stock=${stockQty}`);
+      
       if (!isActive || !isAvailable || stockQty <= 0) {
-        unavailable.push({ medicineId: medId, name: med?.name || 'Medicine', reason: 'unavailable' });
+        const reason = !isActive ? 'inactive' : !isAvailable ? 'unavailable' : 'out_of_stock';
+        console.log(`[REORDER] Medicine ${medId} not available: ${reason}`);
+        unavailable.push({ medicineId: medId, name: med?.name || 'Medicine', reason });
         continue;
       }
       const desiredQty = it.quantity || 1;
