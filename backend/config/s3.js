@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 
 // AWS S3 Configuration
 const s3Config = {
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: process.env.AWS_REGION || 'ap-south-1', // Updated to match actual bucket region
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,

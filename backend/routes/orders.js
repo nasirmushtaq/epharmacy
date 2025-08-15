@@ -282,23 +282,10 @@ router.post('/', authenticate, [
     const order = await Order.create(newOrder);
     await order.populate(getPopulateFields(orderType));
 
-    // Send order confirmation email (gracefully handle missing email service)
-    try {
-      const customer = await User.findById(req.user._id);
-      if (emailService && emailService.sendOrderConfirmationEmail) {
-        await emailService.sendOrderConfirmationEmail(order, customer);
-        console.log(`✅ Order confirmation email sent to ${customer.email}`);
-      } else {
-        console.log(`⚠️ Email service not configured, order ${order.orderNumber} created for ${customer.email}`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to send order confirmation email:', error.message);
-      // Don't fail order creation if email fails
-    }
+    // Do NOT send order confirmation email yet - only send after payment confirmation
+    console.log(`[ORDERS] Order created: ${order.orderNumber} (${orderType}) - awaiting payment confirmation`);
 
     // Do not auto-assign pharmacy on creation; pharmacists can claim/confirm later
-
-    console.log(`[ORDERS] Order created: ${order.orderNumber} (${orderType})`);
     res.status(201).json({ success: true, data: order });
     
   } catch (error) {
@@ -349,6 +336,20 @@ router.post('/webhooks/razorpay', express.raw({ type: '*/*' }), async (req, res)
       const entityId = notes.entityId;
       if (entityType === 'order' && entityId) {
         const order = await Order.findByIdAndUpdate(entityId, { 'payment.status': 'paid', status: 'confirmed' }, { new: true });
+        
+        // Send order confirmation email ONLY after payment is successful
+        try {
+          const customer = await User.findById(order.customer);
+          if (emailService && emailService.sendOrderConfirmationEmail) {
+            await emailService.sendOrderConfirmationEmail(order, customer);
+            console.log(`✅ Order confirmation email sent to ${customer.email} after payment confirmation`);
+          } else {
+            console.log(`⚠️ Email service not configured, order ${order.orderNumber} payment confirmed for ${customer.email}`);
+          }
+        } catch (error) {
+          console.error('❌ Failed to send order confirmation email after payment:', error.message);
+          // Don't fail payment processing if email fails
+        }
         
         // Assign pharmacy if not already assigned for medicine orders
         if (order && order.orderType === 'medicine' && !order.pharmacy) {

@@ -165,7 +165,7 @@ router.post('/cashfree/create', authenticate, async (req, res) => {
     
     const appId = process.env.CASHFREE_APP_ID;
     const secret = process.env.CASHFREE_SECRET_KEY;
-    const env = process.env.CASHFREE_ENV || 'SANDBOX';
+    const env = process.env.CASHFREE_ENVIRONMENT || process.env.CASHFREE_ENV || 'SANDBOX';
     console.log('[PAYMENTS][CF][CREATE] Using environment:', env);
     
     if (!appId || !secret) { 
