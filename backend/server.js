@@ -38,67 +38,12 @@ mongoose.connect(config.mongodbUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(async () => {
+.then(() => {
   console.log('MongoDB connected successfully');
-  await ensureBootstrapAdmin();
 })
 .catch((err) => console.error('MongoDB connection error:', err));
 
-async function ensureBootstrapAdmin() {
-  try {
-    const email = (process.env.ADMIN_EMAIL || '').toLowerCase();
-    const password = process.env.ADMIN_PASSWORD;
-    if (!email || !password) {
-      return; // not configured
-    }
 
-    const firstName = process.env.ADMIN_FIRST || 'Admin';
-    const lastName = process.env.ADMIN_LAST || 'User';
-    const phone = process.env.ADMIN_PHONE || '+917006861539';
-    const address = {
-      street: process.env.ADMIN_STREET || 'Bomai',
-      city: process.env.ADMIN_CITY || 'Srinagar',
-      state: process.env.ADMIN_STATE || 'JK',
-      zipCode: process.env.ADMIN_ZIP || '193201',
-      country: process.env.ADMIN_COUNTRY || 'India'
-    };
-
-    let user = await User.findOne({ email }).select('+password');
-    if (!user) {
-      user = await User.create({
-        firstName,
-        lastName,
-        email,
-        password,
-        phone,
-        role: 'admin',
-        address,
-        isApproved: true,
-        isActive: true,
-        isEmailVerified: true
-      });
-      console.log(`Bootstrap admin created: ${email}`);
-      return;
-    }
-
-    // Update existing user to admin
-    user.firstName = firstName;
-    user.lastName = lastName;
-    user.phone = phone;
-    user.address = address;
-    user.role = 'admin';
-    user.isApproved = true;
-    user.isActive = true;
-    user.isEmailVerified = true;
-    if (String(process.env.ADMIN_RESET_PASSWORD || '').toLowerCase() === 'true') {
-      user.password = password; // will be hashed by pre-save hook
-    }
-    await user.save();
-    console.log(`Bootstrap admin ensured (updated): ${email}`);
-  } catch (e) {
-    console.error('Failed to bootstrap admin:', e.message);
-  }
-}
 
 // Security middleware
 app.use(helmet());

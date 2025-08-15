@@ -21,17 +21,7 @@ OTP_TTL_MIN=10
 BACKEND_URL=https://epharmacy-production.up.railway.app
 CORS_ALLOW_ALL=true
 
-# Admin Bootstrap
-ADMIN_EMAIL=admin@epharmacy.com
-ADMIN_PASSWORD=admin123
-ADMIN_FIRST=Admin
-ADMIN_LAST=User
-ADMIN_PHONE=+917006861539
-ADMIN_STREET=Bomai
-ADMIN_CITY=Srinagar
-ADMIN_STATE=JK
-ADMIN_ZIP=193201
-ADMIN_COUNTRY=India
+# Admin accounts must be created manually via registration
 
 # AWS S3 Configuration (NEW)
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
@@ -58,7 +48,6 @@ After deployment, check Railway logs for:
 ```
 ✅ AWS S3 client initialized
 MongoDB connected successfully
-✅ Admin user created/updated
 Server running on port 8080 in production mode
 ```
 
@@ -129,10 +118,10 @@ If S3 credentials are missing or invalid:
 # Basic health check
 curl https://epharmacy-production.up.railway.app/api/auth/me
 
-# Admin login (to verify admin bootstrap)
-curl -X POST https://epharmacy-production.up.railway.app/api/auth/login \
+# Test user registration
+curl -X POST https://epharmacy-production.up.railway.app/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@epharmacy.com","password":"admin123"}'
+  -d '{"email":"test@example.com","password":"test123","firstName":"Test","lastName":"User","role":"customer"}'
 ```
 
 ## 📊 **Monitoring S3 Usage:**
@@ -154,7 +143,7 @@ curl -X POST https://epharmacy-production.up.railway.app/api/auth/login \
 - ✅ **S3 bucket** created with proper permissions
 - ✅ **IAM user** has minimal required permissions
 - ✅ **MongoDB** connection working
-- ✅ **Admin user** can login
+- ✅ **User registration** working
 - ✅ **Mobile app** pointing to Railway
 - ✅ **Prescription upload** tested end-to-end
 - ✅ **Pharmacist document** viewing tested
